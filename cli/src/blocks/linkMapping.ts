@@ -1,18 +1,21 @@
-import type { DesignBundleAsset, DesignNode } from "../core/types/designBundle";
+import type { DesignBundleAsset } from "../core/types/designBundle";
 import type { GeneratedBlock } from "./types.ts";
 import type { MapNodeContext } from "./mapNode.ts";
 import { escapeHtml, layoutToDeclarations, nodeStyleToDeclarations, joinStyles, fontFamilyDeclaration, withAlpha } from "../core/style/styleHelpers.ts";
 import { nodeClassFor } from "../core/style/nodeClass.ts";
 import { addRule } from "../core/style/stylesheet.ts";
 import { toSlug } from "../core/slugify.ts";
+import type { DesignNode } from "../core/types/designBundle";
+import type { DetectedLink } from "../core/classify/linkDetect.ts";
 
 /**
- * D73 — `Link / {PageHint}` naming convention (same "Category / rest" shape
- * as D62's `Form / {Name}`). Detects a TEXT node, or a FRAME wrapping
- * exactly one TEXT label and at most one IMAGE/VECTOR icon, named
- * `Link / {PageHint}`, and renders a real `<a href="#page-hint">` instead
- * of the generic `core/group`/`core/paragraph` that name would otherwise
- * fall through to.
+ * D73 — `Link / {PageHint}` naming convention: rendering half. Takes the
+ * target-neutral `DetectedLink` shape produced by
+ * `core/classify/linkDetect.ts`'s `detectLink` and renders a real
+ * `<a href="#page-hint">` instead of the generic `core/group`/
+ * `core/paragraph` that name would otherwise fall through to. See that
+ * file for the detection half and the full D73/D75/D76 rationale; see
+ * `06-block-mapping.md`'s "Links" section for the full spec.
  *
  * The real destination URL isn't in the Figma file at all — Sean's
  * explicit call — so `href` is always emitted as a same-page anchor built
@@ -26,72 +29,8 @@ import { toSlug } from "../core/slugify.ts";
  * The raw, unslugified `{PageHint}` is still carried through as-is in a
  * `data-figma-link` attribute on the generated `<a>` so the designer can
  * tell which link is which without having to cross-reference the Figma
- * file. `{PageHint}` still does nothing else (no lookup, no routing). See
- * `06-block-mapping.md`'s "Links" section for the full spec.
- *
- * Deliberately additive, same as D62's forms: any structural mismatch
- * (including a node that only starts with the right name) falls through
- * to the caller's normal node-type handling, never a hard failure.
+ * file. `{PageHint}` still does nothing else (no lookup, no routing).
  */
-
-// Intentionally duplicated from formMapping.ts rather than shared — same
-// "small, low-risk helper, not worth the cross-file coupling" precedent
-// already used in that file for its own captionDeclarations vs. mapText.
-const NAMESPACED = /^([A-Za-z]+)\s*\/\s*(.+)$/;
-
-const parseNamespaced = (name: string): { category: string; rest: string } | undefined => {
-  const match = NAMESPACED.exec(name.trim());
-  if (!match) return undefined;
-  return { category: match[1], rest: match[2].trim() };
-};
-
-const matchesCategory = (name: string, category: string): { category: string; rest: string } | undefined => {
-  const parsed = parseNamespaced(name);
-  return parsed && parsed.category.toLowerCase() === category.toLowerCase() ? parsed : undefined;
-};
-
-export interface DetectedLink {
-  /** The `Link / {page}` node itself — a TEXT node used directly, or a FRAME wrapping the label (+ optional icon). */
-  linkNode: DesignNode;
-  /** The raw `{PageHint}` placeholder from the name — slugified (`toSlug`) for the `href="#..."` anchor, and carried through as-is in a `data-figma-link` attribute; no lookup/routing. */
-  page: string;
-  /** The TEXT node providing the visible label — the link node itself when it's a bare TEXT, or its one TEXT child when it's a FRAME. */
-  label: DesignNode;
-  /** Optional single IMAGE/VECTOR sibling of the label inside a FRAME-shaped link — e.g. a small icon next to nav text. Never present for a bare-TEXT link. */
-  icon?: DesignNode;
-}
-
-export const detectLink = (
-  node: DesignNode,
-  warnIfNamedButInvalid?: (message: string) => void,
-): DetectedLink | undefined => {
-  const parsed = matchesCategory(node.uniqueName, "Link");
-  if (!parsed) return undefined;
-
-  if (node.type === "TEXT") {
-    return { linkNode: node, page: parsed.rest, label: node };
-  }
-
-  if (node.type !== "FRAME") {
-    warnIfNamedButInvalid?.(
-      `"${node.uniqueName}" is named like a Link but is a ${node.type} node, not TEXT or FRAME — rendering normally instead.`,
-    );
-    return undefined;
-  }
-
-  const textChildren = node.children.filter((c) => c.type === "TEXT");
-  const iconChildren = node.children.filter((c) => c.type === "IMAGE" || c.type === "VECTOR");
-  const otherChildren = node.children.filter((c) => c.type !== "TEXT" && c.type !== "IMAGE" && c.type !== "VECTOR");
-
-  if (textChildren.length !== 1 || iconChildren.length > 1 || otherChildren.length > 0) {
-    warnIfNamedButInvalid?.(
-      `"${node.uniqueName}" is named like a Link but doesn't match the required shape (exactly one text label, at most one icon — see 06-block-mapping.md) — rendering as a plain group instead.`,
-    );
-    return undefined;
-  }
-
-  return { linkNode: node, page: parsed.rest, label: textChildren[0], icon: iconChildren[0] };
-};
 
 const labelText = (node: DesignNode): string => escapeHtml((node.text?.segments ?? []).map((s) => s.characters).join(""));
 
@@ -123,7 +62,7 @@ const classFor = (node: DesignNode, ctx: MapNodeContext, declarations: string | 
 // Same two-mode asset URL resolution as mapNode.ts's resolveAssetSrc,
 // intentionally duplicated (small, self-contained, avoids a circular
 // import between mapNode.ts and this file — mapNode.ts is what imports
-// detectLink/renderLink, not the other way around).
+// renderLink, not the other way around).
 const resolveAssetSrc = (asset: DesignBundleAsset, ctx: MapNodeContext): string =>
   ctx.imageSrcMode?.kind === "url"
     ? `${ctx.imageSrcMode.baseUrl.replace(/\/$/, "")}/${asset.fileName.replace(/^assets\//, "")}`

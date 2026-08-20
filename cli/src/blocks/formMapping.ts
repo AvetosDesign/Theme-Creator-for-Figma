@@ -1,4 +1,3 @@
-import type { DesignNode } from "../core/types/designBundle";
 import type { GeneratedBlock } from "./types.ts";
 import type { MapNodeContext } from "./mapNode.ts";
 import {
@@ -12,49 +11,23 @@ import {
 import { nodeClassFor } from "../core/style/nodeClass.ts";
 import { addRule } from "../core/style/stylesheet.ts";
 import { toSlug } from "../core/slugify.ts";
+import type { DesignNode } from "../core/types/designBundle";
+import type { DetectedField, DetectedButton, DetectedForm } from "../core/classify/formDetect.ts";
 
 /**
- * D62 — Forms and in-form buttons. Detects a `Form / {Name}` FRAME whose
- * children all match a prescribed `Input / {FieldName}` /
- * `Button / {ButtonType}` naming + required-child-shape convention (see
- * ClaudeFiles/06-block-mapping.md's "Forms and in-form buttons" section for
- * the full spec), and renders real `<form>`/`<label>`/`<input>`/
- * `<textarea>`/`<button>` markup instead of generic nested `core/group`/
- * `core/paragraph` blocks.
- *
- * Deliberately additive: any structural mismatch falls through to the
- * caller's normal `mapContainer` handling, same as an unrecognized node
- * today — this never hard-fails the whole design.
+ * D62 — Forms and in-form buttons: rendering half. Takes the target-neutral
+ * `DetectedForm` shape produced by `core/classify/formDetect.ts`'s
+ * `detectForm` and renders real `<form>`/`<label>`/`<input>`/`<textarea>`/
+ * `<button>` markup instead of generic nested `core/group`/`core/paragraph`
+ * blocks. See that file for the detection half and the full D62 rationale;
+ * see ClaudeFiles/06-block-mapping.md's "Forms and in-form buttons" section
+ * for the full spec.
  */
-
-const NAMESPACED = /^([A-Za-z]+)\s*\/\s*(.+)$/;
-
-/** Strips Figma's own auto-dedup numeric suffix ("Field_01" -> "Field"), so a bare-named node matches regardless of how many siblings share that base name. */
-const stripDedupSuffix = (name: string): string => name.replace(/_\d+$/, "");
-
-interface NamespacedName {
-  category: string;
-  rest: string;
-}
-
-const parseNamespaced = (name: string): NamespacedName | undefined => {
-  const match = NAMESPACED.exec(name.trim());
-  if (!match) return undefined;
-  return { category: match[1], rest: match[2].trim() };
-};
-
-const matchesCategory = (name: string, category: string): NamespacedName | undefined => {
-  const parsed = parseNamespaced(name);
-  return parsed && parsed.category.toLowerCase() === category.toLowerCase() ? parsed : undefined;
-};
-
-const matchesBareCategory = (name: string, category: string): boolean =>
-  stripDedupSuffix(name.trim()).toLowerCase() === category.toLowerCase();
 
 // Sean's starter dictionaries (D62) — thin, case-insensitive keyword match,
 // first match wins, unmatched falls through to the safe default. Kept as
 // plain data so they're easy to extend later without touching the
-// detection/rendering logic around them.
+// rendering logic around them.
 const FIELD_TYPE_KEYWORDS: ReadonlyArray<readonly [RegExp, string]> = [
   [/email/i, "email"],
   [/phone/i, "tel"],
@@ -81,107 +54,10 @@ const buttonTypeFor = (buttonType: string): string => {
 };
 
 // camelCase/PascalCase FieldName -> kebab-case, then through the project's
-// existing toSlug for final normalization (theme/slugify.ts, reused as-is
+// existing toSlug for final normalization (core/slugify.ts, reused as-is
 // rather than duplicating its safety rules).
 const slugifyFieldName = (fieldName: string): string =>
   toSlug(fieldName.replace(/([a-z0-9])([A-Z])/g, "$1-$2"));
-
-interface DetectedField {
-  input: DesignNode;
-  fieldName: string;
-  label: DesignNode;
-  field: DesignNode;
-  valueNode: DesignNode;
-  isValue: boolean; // true = pre-filled "Value", false = "Hint" placeholder
-}
-
-interface DetectedButton {
-  button: DesignNode;
-  buttonType: string;
-  label: DesignNode;
-}
-
-interface DetectedForm {
-  form: DesignNode;
-  fields: DetectedField[];
-  buttons: DetectedButton[];
-}
-
-const detectField = (node: DesignNode): DetectedField | undefined => {
-  const parsed = matchesCategory(node.uniqueName, "Input");
-  if (!parsed || node.type !== "FRAME") return undefined;
-
-  const label = node.children.find((c) => matchesCategory(c.uniqueName, "Label"));
-  const field = node.children.find((c) => matchesBareCategory(c.uniqueName, "Field"));
-  if (!label || !field || label.type !== "TEXT" || field.type !== "FRAME") return undefined;
-
-  const valueChild = field.children.find(
-    (c) => matchesBareCategory(c.uniqueName, "Hint") || matchesBareCategory(c.uniqueName, "Value"),
-  );
-  if (!valueChild || valueChild.type !== "TEXT") return undefined;
-
-  return {
-    input: node,
-    fieldName: parsed.rest,
-    label,
-    field,
-    valueNode: valueChild,
-    isValue: matchesBareCategory(valueChild.uniqueName, "Value"),
-  };
-};
-
-const detectButton = (node: DesignNode): DetectedButton | undefined => {
-  const parsed = matchesCategory(node.uniqueName, "Button");
-  if (!parsed || node.type !== "FRAME") return undefined;
-
-  const label = node.children.find((c) => matchesCategory(c.uniqueName, "Label"));
-  if (!label || label.type !== "TEXT") return undefined;
-
-  return { button: node, buttonType: parsed.rest, label };
-};
-
-/**
- * Returns undefined on any structural mismatch — deliberately additive,
- * never a hard failure. `warnIfNamedButInvalid`, when supplied, is called
- * once when the top-level node's *name* matches `Form / *` but the
- * required child shape doesn't validate — a likely designer authoring
- * mistake worth surfacing, distinct from "this was never meant to be a
- * form" (which stays silent, same as any other unrecognized node).
- */
-export const detectForm = (
-  node: DesignNode,
-  warnIfNamedButInvalid?: (message: string) => void,
-): DetectedForm | undefined => {
-  if (node.type !== "FRAME" || !matchesCategory(node.uniqueName, "Form")) return undefined;
-
-  const fields: DetectedField[] = [];
-  const buttons: DetectedButton[] = [];
-
-  for (const child of node.children) {
-    const field = detectField(child);
-    if (field) {
-      fields.push(field);
-      continue;
-    }
-    const button = detectButton(child);
-    if (button) {
-      buttons.push(button);
-      continue;
-    }
-    warnIfNamedButInvalid?.(
-      `"${node.uniqueName}" is named like a Form but child "${child.uniqueName}" doesn't match the required Input/Button shape (see 06-block-mapping.md) — rendering as a plain group instead.`,
-    );
-    return undefined;
-  }
-
-  if (fields.length === 0 || buttons.length === 0) {
-    warnIfNamedButInvalid?.(
-      `"${node.uniqueName}" is named like a Form but has no valid Input and/or Button children — rendering as a plain group instead.`,
-    );
-    return undefined;
-  }
-  return { form: node, fields, buttons };
-};
 
 // Generated CSS class for a node's own layout/fill/border box, same
 // zero-attrs-footprint mechanism the rest of the mapper uses (D27) — just

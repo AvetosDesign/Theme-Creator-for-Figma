@@ -5,8 +5,10 @@ import { headingLevelFor } from "../core/classify/headingHeuristic.ts";
 import { nodeClassFor } from "../core/style/nodeClass.ts";
 import { addRule } from "../core/style/stylesheet.ts";
 import type { Stylesheet } from "../core/style/stylesheet.ts";
-import { detectForm, renderForm } from "./formMapping.ts";
-import { detectLink, renderLink } from "./linkMapping.ts";
+import { detectForm } from "../core/classify/formDetect.ts";
+import { renderForm } from "./formMapping.ts";
+import { detectLink } from "../core/classify/linkDetect.ts";
+import { renderLink } from "./linkMapping.ts";
 
 /**
  * Phase 4: image `src` resolution differs by output mode, unlike D31's
