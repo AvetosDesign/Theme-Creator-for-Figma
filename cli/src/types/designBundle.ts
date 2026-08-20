@@ -6,10 +6,22 @@
 // live in separate repositories on purpose — this CLI is a downstream
 // consumer of the bundle format, not a workspace sibling of the plugin
 // that produces it — so there's no automatic way to keep this file in
-// sync. If the bundle's `schemaVersion` ever changes, re-copy the
-// matching type block from FigmaToCode's `packages/types/src/types.ts`
-// (the `DesignBundleFillType` through `DesignBundle` types) into this
-// file.
+// sync, and nothing here will warn you if it drifts. If the bundle's
+// `schemaVersion` ever changes, re-copy the matching type block from
+// FigmaToCode's `packages/types/src/types.ts` (the `DesignBundleFillType`
+// through `DesignBundle` types) into this file, and update the two
+// markers below.
+//
+// SOURCE (update both on every re-copy):
+//   repo:   AvetosDesign/FigmaToCode
+//   commit: a025a0049ea9a7d1da239af6dd82fda084a85cd0
+//   file:   packages/types/src/types.ts, lines 106-415
+//           (DesignBundleFillType through the DesignBundle interface)
+//   sha256: 1466420f0425524ead3a79a3895a3e71d13c0a695e52b6b648f3889371021f0a
+//           of that exact line range, verbatim — recompute with
+//           `sed -n '106,415p' packages/types/src/types.ts | sha256sum`
+//           against FigmaToCode's current HEAD and compare, to check
+//           whether this file has drifted before assuming it hasn't.
 export type DesignBundleFillType = "SOLID" | "GRADIENT" | "OTHER";
 
 // The three gradient kinds CSS has a native equivalent for. Figma's
