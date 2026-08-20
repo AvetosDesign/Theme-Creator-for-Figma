@@ -1,0 +1,247 @@
+.tcf-wrap h2 {
+	margin-top: 2em;
+}
+
+.tcf-status-table {
+	border-collapse: collapse;
+}
+
+.tcf-status-table td {
+	padding: 10px 12px;
+	vertical-align: top;
+}
+
+.tcf-status-icon {
+	width: 28px;
+	text-align: center;
+}
+
+.tcf-status-icon .dashicons {
+	width: 22px;
+	height: 22px;
+	font-size: 22px;
+}
+
+.tcf-ok {
+	color: #1a7f37;
+}
+
+.tcf-fail {
+	color: #d63638;
+}
+
+.tcf-version {
+	color: #646970;
+}
+
+.tcf-optional {
+	color: #646970;
+	font-weight: normal;
+	font-size: 13px;
+}
+
+.tcf-help {
+	margin-top: 6px;
+	font-size: 13px;
+}
+
+.tcf-help summary {
+	cursor: pointer;
+	color: #2271b1;
+}
+
+.tcf-help-body {
+	margin-top: 8px;
+	padding: 10px 12px;
+	background: #f6f7f7;
+	border-left: 3px solid #d63638;
+}
+
+.tcf-help-body ul {
+	list-style: disc;
+	margin-left: 1.2em;
+}
+
+.tcf-disabled-hint {
+	margin-left: 8px;
+	color: #646970;
+	font-style: italic;
+}
+
+.tcf-cli-output {
+	max-height: 320px;
+	overflow: auto;
+	margin-top: 8px;
+	padding: 10px 12px;
+	background: #1e1e1e;
+	color: #d4d4d4;
+	font-size: 12px;
+	line-height: 1.5;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.tcf-generating-overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: rgba(255, 255, 255, 0.85);
+	display: none;
+	align-items: center;
+	justify-content: center;
+	z-index: 100000;
+}
+
+/* The [hidden] attribute alone isn't enough here: it and the class
+ * selector above have equal specificity, and this stylesheet loads after
+ * the browser's UA stylesheet, so `display: flex` above would otherwise
+ * win and the overlay would show on every page load regardless of the
+ * `hidden` attribute admin.js toggles on submit. This rule -- matching
+ * on the *absence* of [hidden] -- is what actually keeps it hidden until
+ * JS removes the attribute. */
+.tcf-generating-overlay:not([hidden]) {
+	display: flex;
+}
+
+.tcf-generating-box {
+	max-width: 420px;
+	padding: 28px 32px;
+	background: #fff;
+	border: 1px solid #dcdcde;
+	border-radius: 4px;
+	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+	text-align: center;
+}
+
+.tcf-spinner {
+	display: inline-block;
+	width: 32px;
+	height: 32px;
+	margin-bottom: 14px;
+	border: 3px solid #dcdcde;
+	border-top-color: #2271b1;
+	border-radius: 50%;
+	animation: tcf-spin 0.9s linear infinite;
+}
+
+@keyframes tcf-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+.tcf-generating-status {
+	margin: 0 0 6px;
+	font-size: 15px;
+	font-weight: 600;
+}
+
+.tcf-generating-hint {
+	margin: 0;
+	color: #646970;
+	font-size: 13px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.tcf-spinner {
+		animation-duration: 2.4s;
+	}
+}
+
+/* Info icon + hover/focus tooltip, used to move field-level explanatory
+ * text off the page by default (see render_info_icon()). The trigger is
+ * a real <button> so it's keyboard-reachable and doesn't submit the
+ * surrounding form; the tooltip shows on :hover *and* :focus so keyboard
+ * and screen-reader users aren't locked out of hover-only content. */
+.tcf-info-wrap {
+	position: relative;
+	display: inline-block;
+	margin-left: 4px;
+	vertical-align: middle;
+}
+
+.tcf-info-trigger {
+	background: none;
+	border: none;
+	margin: 0;
+	padding: 0;
+	cursor: help;
+	line-height: 1;
+	vertical-align: middle;
+}
+
+.tcf-info-trigger .dashicons {
+	width: 18px;
+	height: 18px;
+	font-size: 18px;
+	color: #787c82;
+}
+
+.tcf-info-trigger:hover .dashicons,
+.tcf-info-trigger:focus .dashicons {
+	color: #2271b1;
+}
+
+.tcf-info-tooltip {
+	display: none;
+	position: absolute;
+	z-index: 10;
+	top: 50%;
+	left: 100%;
+	transform: translateY(-50%);
+	margin-left: 10px;
+	width: 320px;
+	max-width: 80vw;
+	padding: 10px 12px;
+	background: #1e1e1e;
+	color: #f0f0f1;
+	font-size: 13px;
+	font-weight: normal;
+	font-style: normal;
+	line-height: 1.5;
+	text-align: left;
+	white-space: normal;
+	border-radius: 4px;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.tcf-info-trigger:hover + .tcf-info-tooltip,
+.tcf-info-trigger:focus + .tcf-info-tooltip {
+	display: block;
+}
+
+@media (max-width: 782px) {
+	.tcf-info-tooltip {
+		left: auto;
+		right: 0;
+		top: 100%;
+		transform: none;
+		margin-left: 0;
+		margin-top: 8px;
+	}
+}
+
+/* Permanent, roll-up-able console output shown below the Generate
+ * button after a run, independent of the dismissible status notice up
+ * top (see D86/D87 in the decisions log). */
+.tcf-console-wrap {
+	margin-top: 20px;
+	max-width: 800px;
+}
+
+.tcf-console-output {
+	font-size: 13px;
+}
+
+.tcf-console-output summary {
+	cursor: pointer;
+	color: #2271b1;
+	font-weight: 600;
+	padding: 4px 0;
+}
+
+.tcf-console-output .tcf-cli-output {
+	margin-top: 8px;
+}
