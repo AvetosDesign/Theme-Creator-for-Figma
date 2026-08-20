@@ -3,7 +3,7 @@
  * Plugin Name:       Theme Creator for Figma
  * Plugin URI:        https://github.com/avetosdesign/theme-creator-for-figma
  * Description:       Generates and installs a WordPress theme from a Figma "Design Bundle" export by invoking a wp-figma-gen CLI on this machine — either one already installed, or a copy this plugin bundles and installs itself. Local/dev-environment use only — never intended to run on a public-facing production site.
- * Version:           0.4.6
+ * Version:           0.4.7
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Avetos Design
@@ -24,7 +24,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit; // Disallow direct access.
 }
 
-define( 'TCF_PLUGIN_VERSION', '0.4.6' );
+define( 'TCF_PLUGIN_VERSION', '0.4.7' );
 define( 'TCF_PLUGIN_FILE', __FILE__ );
 define( 'TCF_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'TCF_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
