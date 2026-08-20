@@ -1,10 +1,10 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { DesignBundle } from "../types/designBundle";
+import type { DesignBundle } from "../core/types/designBundle";
 import { mapDesignNode, renderBlock, asRenderRoot } from "../blocks/index.ts";
 import type { ImageSrcMode, MappingWarning } from "../blocks/index.ts";
-import { assignUniqueSlugs } from "../theme/slugify.ts";
-import { createStylesheet, renderStylesheet } from "../blocks/stylesheet.ts";
+import { assignUniqueSlugs } from "../core/slugify.ts";
+import { createStylesheet, renderStylesheet } from "../core/style/stylesheet.ts";
 
 export interface GeneratePatternsResult {
   outDir: string;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildThemeTokens } from "./generateThemeTokens.ts";
-import type { DesignBundle } from "../types/designBundle.ts";
+import type { DesignBundle } from "../core/types/designBundle.ts";
 
 const emptyRoot = {
   id: "root",

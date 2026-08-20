@@ -1,4 +1,4 @@
-import type { DesignNode } from "../types/designBundle";
+import type { DesignNode } from "../core/types/designBundle";
 import type { GeneratedBlock } from "./types.ts";
 import type { MapNodeContext } from "./mapNode.ts";
 import {
@@ -8,10 +8,10 @@ import {
   joinStyles,
   fontFamilyDeclaration,
   withAlpha,
-} from "./styleHelpers.ts";
-import { nodeClassFor } from "./nodeClass.ts";
-import { addRule } from "./stylesheet.ts";
-import { toSlug } from "../theme/slugify.ts";
+} from "../core/style/styleHelpers.ts";
+import { nodeClassFor } from "../core/style/nodeClass.ts";
+import { addRule } from "../core/style/stylesheet.ts";
+import { toSlug } from "../core/slugify.ts";
 
 /**
  * D62 — Forms and in-form buttons. Detects a `Form / {Name}` FRAME whose

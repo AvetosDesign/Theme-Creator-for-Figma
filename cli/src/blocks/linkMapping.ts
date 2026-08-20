@@ -1,10 +1,10 @@
-import type { DesignBundleAsset, DesignNode } from "../types/designBundle";
+import type { DesignBundleAsset, DesignNode } from "../core/types/designBundle";
 import type { GeneratedBlock } from "./types.ts";
 import type { MapNodeContext } from "./mapNode.ts";
-import { escapeHtml, layoutToDeclarations, nodeStyleToDeclarations, joinStyles, fontFamilyDeclaration, withAlpha } from "./styleHelpers.ts";
-import { nodeClassFor } from "./nodeClass.ts";
-import { addRule } from "./stylesheet.ts";
-import { toSlug } from "../theme/slugify.ts";
+import { escapeHtml, layoutToDeclarations, nodeStyleToDeclarations, joinStyles, fontFamilyDeclaration, withAlpha } from "../core/style/styleHelpers.ts";
+import { nodeClassFor } from "../core/style/nodeClass.ts";
+import { addRule } from "../core/style/stylesheet.ts";
+import { toSlug } from "../core/slugify.ts";
 
 /**
  * D73 — `Link / {PageHint}` naming convention (same "Category / rest" shape

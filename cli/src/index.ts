@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 import { CliUsageError, parseCliArgs } from "./cliArgs.ts";
-import { DesignBundleValidationError, loadDesignBundle } from "./loadBundle.ts";
+import { DesignBundleValidationError, loadDesignBundle } from "./core/loadBundle.ts";
 import { generateTheme } from "./commands/theme.ts";
 import { generatePatterns } from "./commands/patterns.ts";
 import { getCliVersion } from "./cliVersion.ts";
 
 export { parseCliArgs } from "./cliArgs.ts";
-export { loadDesignBundle } from "./loadBundle.ts";
-export type { LoadedDesignBundle } from "./loadBundle.ts";
+export { loadDesignBundle } from "./core/loadBundle.ts";
+export type { LoadedDesignBundle } from "./core/loadBundle.ts";
 
 // D38: theme mode's font self-hosting step makes a real network call
 // (Google Fonts), so generateTheme (and therefore main) is now async —

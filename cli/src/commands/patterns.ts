@@ -1,4 +1,4 @@
-import type { LoadedDesignBundle } from "../loadBundle.ts";
+import type { LoadedDesignBundle } from "../core/loadBundle.ts";
 import { generatePatternFiles } from "../patterns/generatePatternFiles.ts";
 import { DEFAULT_ASSET_BASE_URL } from "../cliArgs.ts";
 

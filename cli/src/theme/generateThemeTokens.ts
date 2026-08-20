@@ -1,5 +1,5 @@
-import type { DesignBundle } from "../types/designBundle";
-import { assignUniqueSlugs, toPresetSlug } from "./slugify.ts";
+import type { DesignBundle } from "../core/types/designBundle";
+import { assignUniqueSlugs, toPresetSlug } from "../core/slugify.ts";
 
 export interface ThemeColorToken {
   slug: string;

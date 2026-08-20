@@ -1,13 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { DesignBundle, DesignNode } from "../types/designBundle";
+import type { DesignBundle, DesignNode } from "../core/types/designBundle";
 import { mapDesignNode, renderBlock, asRenderRoot } from "../blocks/index.ts";
 import type { MappingWarning } from "../blocks/index.ts";
-import { assignUniqueSlugs, toSlug } from "./slugify.ts";
+import { assignUniqueSlugs, toSlug } from "../core/slugify.ts";
 import { classifyTemplateParts, templatePartInclusion, pickTopmostChild, pickBottommostChild } from "./templateParts.ts";
 import type { ClassifiedTemplateParts, TemplatePartArea } from "./templateParts.ts";
 import { buildThemeTokens } from "./generateThemeTokens.ts";
-import { createStylesheet, renderStylesheet } from "../blocks/stylesheet.ts";
+import { createStylesheet, renderStylesheet } from "../core/style/stylesheet.ts";
 import { getCliVersion } from "../cliVersion.ts";
 import { collectFontRequests, resolveGoogleFonts, fontFaceCss } from "./googleFonts.ts";
 

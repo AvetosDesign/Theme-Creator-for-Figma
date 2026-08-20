@@ -1,4 +1,4 @@
-import type { DesignBundle, DesignNode } from "../types/designBundle";
+import type { DesignBundle, DesignNode } from "../core/types/designBundle";
 
 /**
  * D38: self-hosting Google Fonts, decided over linking Google's CDN

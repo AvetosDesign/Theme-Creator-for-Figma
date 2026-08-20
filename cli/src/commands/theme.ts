@@ -1,4 +1,4 @@
-import type { LoadedDesignBundle } from "../loadBundle.ts";
+import type { LoadedDesignBundle } from "../core/loadBundle.ts";
 import { generateThemeFiles } from "../theme/generateThemeFiles.ts";
 
 /**

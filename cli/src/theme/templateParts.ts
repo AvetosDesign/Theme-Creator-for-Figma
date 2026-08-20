@@ -1,8 +1,8 @@
-import type { DesignBundle, DesignNode } from "../types/designBundle";
+import type { DesignBundle, DesignNode } from "../core/types/designBundle";
 import type { RawBlockChild } from "../blocks/index.ts";
 import { indentStr } from "../blocks/index.ts";
-import type { Stylesheet } from "../blocks/stylesheet.ts";
-import { addRule } from "../blocks/stylesheet.ts";
+import type { Stylesheet } from "../core/style/stylesheet.ts";
+import { addRule } from "../core/style/stylesheet.ts";
 
 export type TemplatePartArea = "header" | "footer";
 

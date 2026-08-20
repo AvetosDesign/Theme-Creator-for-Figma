@@ -1,10 +1,10 @@
-import type { DesignBundleAsset, DesignBundleEffect, DesignBundleTextStyle, DesignNode } from "../types/designBundle";
+import type { DesignBundleAsset, DesignBundleEffect, DesignBundleTextStyle, DesignNode } from "../core/types/designBundle";
 import type { GeneratedBlock, MappingWarning } from "./types.ts";
-import { escapeHtml, layoutToDeclarations, nodeStyleToDeclarations, joinStyles, fontFamilyDeclaration, withAlpha } from "./styleHelpers.ts";
-import { headingLevelFor } from "./headingHeuristic.ts";
-import { nodeClassFor } from "./nodeClass.ts";
-import { addRule } from "./stylesheet.ts";
-import type { Stylesheet } from "./stylesheet.ts";
+import { escapeHtml, layoutToDeclarations, nodeStyleToDeclarations, joinStyles, fontFamilyDeclaration, withAlpha } from "../core/style/styleHelpers.ts";
+import { headingLevelFor } from "../core/classify/headingHeuristic.ts";
+import { nodeClassFor } from "../core/style/nodeClass.ts";
+import { addRule } from "../core/style/stylesheet.ts";
+import type { Stylesheet } from "../core/style/stylesheet.ts";
 import { detectForm, renderForm } from "./formMapping.ts";
 import { detectLink, renderLink } from "./linkMapping.ts";
 
