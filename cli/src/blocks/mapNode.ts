@@ -1,14 +1,13 @@
 import type { DesignBundleAsset, DesignBundleEffect, DesignBundleTextStyle, DesignNode } from "../core/types/designBundle";
 import type { GeneratedBlock, MappingWarning } from "./types.ts";
 import { escapeHtml, layoutToDeclarations, nodeStyleToDeclarations, joinStyles, fontFamilyDeclaration, withAlpha } from "../core/style/styleHelpers.ts";
-import { headingLevelFor } from "../core/classify/headingHeuristic.ts";
 import { nodeClassFor } from "../core/style/nodeClass.ts";
 import { addRule } from "../core/style/stylesheet.ts";
 import type { Stylesheet } from "../core/style/stylesheet.ts";
-import { detectForm } from "../core/classify/formDetect.ts";
 import { renderForm } from "./formMapping.ts";
-import { detectLink } from "../core/classify/linkDetect.ts";
 import { renderLink } from "./linkMapping.ts";
+import { walkDesignTree, type NodeClassification } from "../core/designTree.ts";
+import type { PublishTarget } from "../targets/target.ts";
 
 /**
  * Phase 4: image `src` resolution differs by output mode, unlike D31's
@@ -56,7 +55,7 @@ export const warn = (ctx: MapNodeContext, nodeId: string, message: string): void
  * fontSize, D26) are the only styling still expressed as real attrs,
  * because those genuinely do round-trip correctly.
  */
-const mapText = (node: DesignNode, ctx: MapNodeContext): GeneratedBlock => {
+const mapText = (node: DesignNode, ctx: MapNodeContext, level: number | undefined): GeneratedBlock => {
   const segments = node.text?.segments ?? [];
   if (segments.length === 0) {
     warn(ctx, node.id, "TEXT node has no text.segments — rendering an empty paragraph.");
@@ -71,7 +70,9 @@ const mapText = (node: DesignNode, ctx: MapNodeContext): GeneratedBlock => {
 
   const innerHtml = segments.map((s) => escapeHtml(s.characters)).join("");
   const first = segments[0];
-  const level = headingLevelFor(segments, ctx.textStyles ?? {});
+  // D103: `level` (the D23 heading classification) is now computed once,
+  // up front, by core/designTree.ts's classifyNode — passed in rather
+  // than recomputed here.
 
   const textColorSlug = first?.fillRef ? ctx.colorSlugByVariableRef?.get(first.fillRef) : undefined;
   const fontSizeSlug = first?.textStyleId ? ctx.fontSizeSlugByTextStyleId?.get(first.textStyleId) : undefined;
@@ -341,7 +342,11 @@ const isEffectMapped = (effect: DesignBundleEffect): boolean => {
   return false; // any other/future Figma effect kind — genuinely unmapped
 };
 
-const mapContainer = (node: DesignNode, ctx: MapNodeContext): GeneratedBlock => {
+const mapContainer = (
+  node: DesignNode,
+  ctx: MapNodeContext,
+  mapChild: (child: DesignNode) => GeneratedBlock,
+): GeneratedBlock => {
   const solidFill = node.style.fills.find((f) => f.type === "SOLID" && f.hex);
   const backgroundColorSlug = solidFill?.variableRef
     ? ctx.colorSlugByVariableRef?.get(solidFill.variableRef)
@@ -507,7 +512,11 @@ const mapContainer = (node: DesignNode, ctx: MapNodeContext): GeneratedBlock => 
     attrs,
     tagName: "div",
     className: wrapperClassName,
-    children: node.children.map((child) => mapDesignNode(child, ctx)),
+    // D103: recursion goes through the caller-supplied `mapChild`
+    // (ultimately core/designTree.ts's walkDesignTree) instead of a
+    // direct self-call, so every child is (re-)classified exactly once,
+    // in one place.
+    children: node.children.map((child) => mapChild(child)),
   };
 };
 
@@ -543,20 +552,33 @@ export const asRenderRoot = (node: DesignNode): DesignNode => ({
   layout: { ...node.layout, position: undefined },
 });
 
-export const mapDesignNode = (node: DesignNode, ctx: MapNodeContext): GeneratedBlock => {
+/**
+ * D103 (Phase 8 step 5) — the actual per-node dispatch, extracted to this
+ * `PublishTarget["mapNode"]`-shaped signature so `targets/wordpress/
+ * index.ts`'s `WordPressTarget` can use it directly as its `mapNode`
+ * implementation, with zero duplication. Behaviorally identical to the
+ * pre-D103 inline switch that used to live directly inside
+ * `mapDesignNode` below — the only difference is that `classification`
+ * (computed once, up front, by `core/designTree.ts`'s `classifyNode`) is
+ * consulted instead of this function calling `detectForm`/`detectLink`
+ * itself, and container recursion goes through the supplied `mapChild`
+ * instead of a direct self-call. Exhaustiveness guard in `default`:
+ * `DesignNodeType` is a closed union (05-block-mapping.md's type table).
+ */
+export const dispatchDesignNode = (
+  node: DesignNode,
+  classification: NodeClassification,
+  ctx: MapNodeContext,
+  mapChild: (child: DesignNode) => GeneratedBlock,
+): GeneratedBlock => {
   switch (node.type) {
     case "TEXT": {
       // D73: a bare `Link / {page}` TEXT node (no wrapping FRAME) renders
-      // as a real `<a href="">` instead of a plain paragraph. Same
-      // additive, falls-through-on-mismatch shape as D62's forms — a TEXT
-      // node always matches structurally here (there's no child shape to
-      // get wrong), so this never warns, it just either matches the name
-      // or it doesn't.
-      const detectedTextLink = detectLink(node);
-      if (detectedTextLink) {
-        return renderLink(detectedTextLink, ctx);
+      // as a real `<a href="">` instead of a plain paragraph.
+      if (classification.detectedLink) {
+        return renderLink(classification.detectedLink, ctx);
       }
-      return mapText(node, ctx);
+      return mapText(node, ctx, classification.headingLevel);
     }
     case "IMAGE":
     case "VECTOR":
@@ -564,29 +586,50 @@ export const mapDesignNode = (node: DesignNode, ctx: MapNodeContext): GeneratedB
     case "FRAME": {
       // D62: a `Form / {Name}` FRAME matching the required Input/Button
       // naming + child-shape convention renders as real form markup
-      // instead of falling through to the generic container mapping. Any
-      // structural mismatch (including one that only starts with the
-      // right name) returns undefined and falls through normally, with a
-      // diagnostic warning for the "named like a Form but invalid" case.
-      const detectedForm = detectForm(node, (message) => warn(ctx, node.id, message));
-      if (detectedForm) {
-        return renderForm(detectedForm, ctx);
+      // instead of falling through to the generic container mapping.
+      if (classification.detectedForm) {
+        return renderForm(classification.detectedForm, ctx);
       }
-      // D73: a `Link / {page}` FRAME (label + optional icon) — same
-      // precedent as the TEXT case above, checked after Form so a node
-      // can't accidentally match both conventions.
-      const detectedFrameLink = detectLink(node, (message) => warn(ctx, node.id, message));
-      if (detectedFrameLink) {
-        return renderLink(detectedFrameLink, ctx);
+      // D73: a `Link / {page}` FRAME (label + optional icon) — checked
+      // after Form so a node can't accidentally match both conventions.
+      if (classification.detectedLink) {
+        return renderLink(classification.detectedLink, ctx);
       }
-      return mapContainer(node, ctx);
+      return mapContainer(node, ctx, mapChild);
     }
     case "RECTANGLE":
-      return mapContainer(node, ctx);
+      return mapContainer(node, ctx, mapChild);
     default: {
-      // Exhaustiveness guard — DesignNodeType is a closed union (05-block-mapping.md's type table).
       warn(ctx, node.id, `Unrecognized node type "${(node as DesignNode).type}" — rendered as an empty group.`);
       return { blockName: "core/group", attrs: {}, tagName: "div", children: [] };
     }
   }
 };
+
+/**
+ * D103: this is deliberately NOT the real `targets/wordpress/index.ts`
+ * `WordPressTarget` — importing that here would create a `blocks/` ->
+ * `targets/` -> `blocks/` cycle, since `WordPressTarget` itself is built
+ * from this file's own exports (`dispatchDesignNode`). This is a
+ * minimal, local stand-in with the same shape, used only to give
+ * `walkDesignTree` something to call — `mapNode` is `dispatchDesignNode`
+ * either way, so there is exactly one WordPress dispatch implementation
+ * regardless of which entry point (this, or the real `WordPressTarget`)
+ * a caller goes through.
+ */
+const wordPressDispatchTarget: PublishTarget<GeneratedBlock, MapNodeContext> = {
+  id: "wordpress",
+  modes: {},
+  mapNode: dispatchDesignNode,
+};
+
+/**
+ * D103: external signature unchanged — every existing caller
+ * (`theme/generateThemeFiles.ts`, `patterns/generatePatternFiles.ts`)
+ * needs no changes. Internally now walks through `core/designTree.ts`'s
+ * `walkDesignTree` instead of an inline switch — zero behavior change,
+ * verified by regenerating and byte-diffing every `TestBundles` bundle's
+ * theme + patterns output against the pre-D103 baseline.
+ */
+export const mapDesignNode = (node: DesignNode, ctx: MapNodeContext): GeneratedBlock =>
+  walkDesignTree(node, wordPressDispatchTarget, ctx, ctx.textStyles ?? {}, (nodeId, message) => warn(ctx, nodeId, message));
