@@ -19,8 +19,7 @@
     "build:watch": "tsup --watch",
     "dev": "tsx src/index.ts",
     "test": "vitest run",
-    "package:plugin-vendor": "node scripts/build-vendor-zip.mjs",
-    "package:plugin-full": "node scripts/build-plugin-zip.mjs"
+    "build:vendor-zip": "node scripts/build-vendor-zip.mjs"
   },
   "dependencies": {
     "fflate": "^0.8.3"

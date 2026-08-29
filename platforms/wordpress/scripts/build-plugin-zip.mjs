@@ -1,21 +1,24 @@
 #!/usr/bin/env node
 /**
- * Packages the plugin half of this repo (everything at the repo root
- * except cli/) into the distributable zip Sean actually installs from
- * (`../Installers/theme-creator-for-figma-<version>.zip`, a sibling
- * folder to this repo where Sean keeps his release-zip history) — the
- * artifact `npm run package:plugin-vendor` (build-vendor-zip.mjs) does
- * NOT produce; that script only rebuilds the bundled CLI copy inside the
- * plugin (`vendor/wp-figma-gen.zip`, D80).
+ * Packages the WordPress platform folder (`platforms/wordpress/` —
+ * D105's `platforms/` repo-layout move relocated this script itself
+ * here, from `cli/scripts/`) into the distributable zip Sean actually
+ * installs from (`../../Installers/theme-creator-for-figma-<version>.zip`,
+ * a sibling folder to this repo where Sean keeps his release-zip
+ * history) — the artifact `npm run build:vendor-zip` (`cli/scripts/
+ * build-vendor-zip.mjs`) does NOT produce; that script only rebuilds the
+ * bundled CLI copy (a bare `wp-figma-gen.zip` next to the CLI package,
+ * D105 — no longer WordPress-specific), which this script then copies
+ * into this platform's own `vendor/` folder before zipping.
  *
  * This gap is exactly what made D81 (see ClaudeFiles/02-decisions-log.md)
  * take four rounds to diagnose: three real plugin-source fixes landed in
  * `Installers/theme-creator-for-figma/` but never reached Sean's
  * WordPress install, because the only zip available to install from was
  * still an old one built by hand for a previous release. This script
- * exists so that never has to happen again — `package:plugin-full` is
- * now the one command that guarantees "what Sean installs" matches "what
- * just got fixed in source."
+ * exists so that never has to happen again — it's the one command that
+ * guarantees "what Sean installs" matches "what just got fixed in
+ * source."
  *
  * Always bumps the patch/build number (the third `X.Y.Z` digit) in
  * `TCF_PLUGIN_VERSION` and readme.txt's "Stable tag" itself, every time
@@ -40,33 +43,37 @@
  * by hand between builds.
  *
  * Zips the plugin folder itself via fflate (same library
- * build-vendor-zip.mjs already uses — no new dependency, and no reliance
- * on a system `zip` binary being on PATH, which matters since this is
- * meant to run on Sean's Windows machine), with every entry prefixed
- * `theme-creator-for-figma/...` so the zip extracts to a single
- * top-level folder — the shape both a manual "drag into wp-content/plugins"
- * install and WordPress's own "Upload Plugin" form expect.
+ * `cli/scripts/build-vendor-zip.mjs` already uses — no new dependency,
+ * and no reliance on a system `zip` binary being on PATH, which matters
+ * since this is meant to run on Sean's Windows machine), with every
+ * entry prefixed `theme-creator-for-figma/...` so the zip extracts to a
+ * single top-level folder — the shape both a manual "drag into
+ * wp-content/plugins" install and WordPress's own "Upload Plugin" form
+ * expect.
  */
 import { execSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, existsSync, copyFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { zipSync } from "fflate";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const cliRoot = join(__dirname, ".."); // cli/
-const repoRoot = join(cliRoot, ".."); // this repo's root — where the plugin files themselves live
-const pluginRoot = repoRoot;
+const __dirname = dirname(fileURLToPath(import.meta.url)); // platforms/wordpress/scripts/
+const pluginRoot = join(__dirname, ".."); // platforms/wordpress/ -- this IS the plugin root now (D105)
+const platformsRoot = join(pluginRoot, ".."); // platforms/
+const repoRoot = join(platformsRoot, ".."); // this repo's root
+const cliRoot = join(repoRoot, "cli");
 const pluginMainFile = join(pluginRoot, "theme-creator-for-figma.php");
 const readmeFile = join(pluginRoot, "readme.txt");
 // Distributable zips keep landing in the same place Sean has always
 // looked for them — a sibling `Installers/` folder alongside this repo,
-// not inside it.
+// not inside it. D105 moved this script one directory level deeper
+// (cli/scripts/ -> platforms/wordpress/scripts/), but repoRoot is
+// recomputed above to match, so this path is unchanged in practice.
 const installersDir = join(repoRoot, "..", "Installers");
 
 // Only these top-level entries are the plugin itself — everything else
-// at the repo root (cli/, README.md, .git, etc.) is this repo's own
-// scaffolding, not part of what WordPress installs.
+// under platforms/wordpress/ (scripts/, etc.) is packaging tooling, not
+// part of what WordPress installs.
 const PLUGIN_TOP_LEVEL_ENTRIES = ["theme-creator-for-figma.php", "readme.txt", "assets", "includes", "vendor"];
 
 // Files/directories to skip when walking the plugin folder — none of
@@ -150,8 +157,21 @@ function collectFiles(dir, baseDir, out) {
   return out;
 }
 
-console.log("[build-plugin-zip] Rebuilding the bundled CLI vendor zip first (npm run package:plugin-vendor)...");
-execSync("npm run package:plugin-vendor", { cwd: cliRoot, stdio: "inherit" });
+console.log("[build-plugin-zip] Rebuilding the CLI vendor zip first (npm run build:vendor-zip)...");
+execSync("npm run build:vendor-zip", { cwd: cliRoot, stdio: "inherit" });
+
+// D105: build:vendor-zip (cli/scripts/build-vendor-zip.mjs) is now
+// platform-agnostic — it writes a bare wp-figma-gen.zip next to the CLI
+// package itself, with no knowledge of WordPress or any vendor/ folder.
+// Copying it into this platform's own vendor/ folder is this script's
+// job now, not that one's.
+const cliVendorZip = join(cliRoot, "wp-figma-gen.zip");
+if (!existsSync(cliVendorZip)) {
+  throw new Error(`Expected ${cliVendorZip} to exist after npm run build:vendor-zip`);
+}
+const pluginVendorDir = join(pluginRoot, "vendor");
+mkdirSync(pluginVendorDir, { recursive: true });
+copyFileSync(cliVendorZip, join(pluginVendorDir, "wp-figma-gen.zip"));
 
 const previousVersion = readPluginVersion();
 

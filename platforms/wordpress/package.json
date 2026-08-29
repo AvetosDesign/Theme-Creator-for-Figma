@@ -1,0 +1,8 @@
+{
+  "name": "theme-creator-for-figma-wordpress",
+  "private": true,
+  "description": "WordPress platform packaging for the Figma-to-WordPress pipeline (04-roadmap.md D95) -- see ../../cli for the target-neutral generation logic this plugin bundles as vendor/wp-figma-gen.zip.",
+  "scripts": {
+    "build": "node scripts/build-plugin-zip.mjs"
+  }
+}

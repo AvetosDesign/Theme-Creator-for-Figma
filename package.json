@@ -1,0 +1,10 @@
+{
+  "name": "theme-creator-for-figma-repo",
+  "private": true,
+  "description": "Repo root for the Figma-to-WordPress pipeline: cli/ (the target-neutral wp-figma-gen CLI) plus platforms/ (installable packaging per target platform -- WordPress today). Thin orchestrator only, per 04-roadmap.md D95 -- no workspace tooling (pnpm/turbo), no shared dependencies hoisted here.",
+  "scripts": {
+    "build:cli": "npm run build --prefix cli",
+    "package:wordpress": "node platforms/wordpress/scripts/build-plugin-zip.mjs",
+    "build": "npm run build:cli && npm run package:wordpress"
+  }
+}
