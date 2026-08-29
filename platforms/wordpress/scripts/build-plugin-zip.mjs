@@ -43,13 +43,22 @@
  * by hand between builds.
  *
  * Zips the plugin folder itself via fflate (same library
- * `cli/scripts/build-vendor-zip.mjs` already uses — no new dependency,
- * and no reliance on a system `zip` binary being on PATH, which matters
- * since this is meant to run on Sean's Windows machine), with every
- * entry prefixed `theme-creator-for-figma/...` so the zip extracts to a
- * single top-level folder — the shape both a manual "drag into
+ * `cli/scripts/build-vendor-zip.mjs` already uses, and no reliance on a
+ * system `zip` binary being on PATH, which matters since this is meant
+ * to run on Sean's Windows machine), with every entry prefixed
+ * `theme-creator-for-figma/...` so the zip extracts to a single
+ * top-level folder — the shape both a manual "drag into
  * wp-content/plugins" install and WordPress's own "Upload Plugin" form
  * expect.
+ *
+ * D106: `fflate` is declared as this platform's OWN dependency
+ * (`platforms/wordpress/package.json`), not inherited from `cli/`'s —
+ * Node's ESM resolution walks up from *this file's own* directory
+ * looking for `node_modules`, which no longer passes through `cli/` now
+ * that this script lives under `platforms/wordpress/scripts/` instead of
+ * `cli/scripts/`. Run `npm install` inside `platforms/wordpress/` (once,
+ * or whenever this changes) before running this script directly or via
+ * `npm run build` from here or the repo root.
  */
 import { execSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, existsSync, copyFileSync } from "node:fs";
