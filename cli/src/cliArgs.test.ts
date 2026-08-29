@@ -1,49 +1,58 @@
 import { describe, expect, it } from "vitest";
-import { CliUsageError, DEFAULT_ASSET_BASE_URL, parseCliArgs } from "./cliArgs.ts";
+import { CliUsageError, DEFAULT_TARGET, parseCliArgs } from "./cliArgs.ts";
 
+/**
+ * D105: rewritten for the two-phase parse. Everything that used to be
+ * asserted here about `--theme-slug`/`--theme-name`/`--no-fonts`/
+ * `--asset-base-url`, and about `--mode` being restricted to
+ * `"theme" | "patterns"`, moved with the behavior itself — mode-specific
+ * flags are now `targets/wordpress/index.ts`'s
+ * `parseThemeModeOptions`/`parsePatternsModeOptions` concern (untested
+ * directly, same as every other `blocks/`/`theme/` module that isn't
+ * `generateThemeTokens.ts`), and mode-name validation is
+ * `commands/generate.ts`'s concern. What's left here is exactly what
+ * `parseCliArgs` still does: recognize the four generic flags, default
+ * `--target`, and collect everything else into `modeArgs` unexamined.
+ */
 describe("parseCliArgs", () => {
   it("parses the minimal required flags with sensible defaults", () => {
     const args = parseCliArgs(["--bundle", "./bundle.zip", "--mode", "theme", "--out", "./out"]);
     expect(args).toEqual({
       bundlePath: "./bundle.zip",
+      target: DEFAULT_TARGET,
       mode: "theme",
       outDir: "./out",
-      themeSlug: undefined,
-      themeName: undefined,
-      assetBaseUrl: undefined,
-      downloadFonts: true,
+      modeArgs: [],
     });
   });
 
-  it("accepts short-flag aliases", () => {
-    const args = parseCliArgs(["-b", "./bundle.zip", "-m", "patterns", "-o", "./out", "-t", "my-theme", "-u", "https://example.com/assets"]);
+  it("accepts short-flag aliases for the generic flags", () => {
+    const args = parseCliArgs(["-b", "./bundle.zip", "-m", "patterns", "-o", "./out"]);
     expect(args.bundlePath).toBe("./bundle.zip");
     expect(args.mode).toBe("patterns");
     expect(args.outDir).toBe("./out");
-    expect(args.themeSlug).toBe("my-theme");
-    expect(args.assetBaseUrl).toBe("https://example.com/assets");
   });
 
-  it("parses --theme-name separately from --theme-slug", () => {
+  it("--target overrides the default", () => {
+    const args = parseCliArgs(["--bundle", "./bundle.zip", "--mode", "theme", "--out", "./out", "--target", "drupal"]);
+    expect(args.target).toBe("drupal");
+  });
+
+  it("collects every non-generic flag into modeArgs, in order, values included", () => {
     const args = parseCliArgs([
-      "--bundle", "./bundle.zip",
-      "--mode", "theme",
-      "--out", "./out",
-      "--theme-slug", "internal-slug",
-      "--theme-name", "My Real Theme Name",
+      "--bundle",
+      "./bundle.zip",
+      "--mode",
+      "theme",
+      "--out",
+      "./out",
+      "--theme-slug",
+      "internal-slug",
+      "--theme-name",
+      "My Real Theme Name",
+      "--no-fonts",
     ]);
-    expect(args.themeSlug).toBe("internal-slug");
-    expect(args.themeName).toBe("My Real Theme Name");
-  });
-
-  it("sets downloadFonts to false when --no-fonts is passed", () => {
-    const args = parseCliArgs(["--bundle", "./bundle.zip", "--mode", "theme", "--out", "./out", "--no-fonts"]);
-    expect(args.downloadFonts).toBe(false);
-  });
-
-  it("defaults downloadFonts to true when --no-fonts is absent", () => {
-    const args = parseCliArgs(["--bundle", "./bundle.zip", "--mode", "theme", "--out", "./out"]);
-    expect(args.downloadFonts).toBe(true);
+    expect(args.modeArgs).toEqual(["--theme-slug", "internal-slug", "--theme-name", "My Real Theme Name", "--no-fonts"]);
   });
 
   it("throws CliUsageError when --bundle is missing", () => {
@@ -58,14 +67,9 @@ describe("parseCliArgs", () => {
     expect(() => parseCliArgs(["--bundle", "./bundle.zip", "--out", "./out"])).toThrow(CliUsageError);
   });
 
-  it("throws CliUsageError when --mode is not theme or patterns", () => {
-    expect(() =>
-      parseCliArgs(["--bundle", "./bundle.zip", "--mode", "bogus", "--out", "./out"]),
-    ).toThrow(CliUsageError);
-  });
-
-  it("throws CliUsageError on an unrecognized argument", () => {
-    expect(() => parseCliArgs(["--nope"])).toThrow(CliUsageError);
+  it("does not validate --mode's value here — an unknown mode name is accepted, rejected later by commands/generate.ts", () => {
+    const args = parseCliArgs(["--bundle", "./bundle.zip", "--mode", "bogus", "--out", "./out"]);
+    expect(args.mode).toBe("bogus");
   });
 
   it("throws CliUsageError (carrying the usage text) when --help is passed", () => {
@@ -77,9 +81,5 @@ describe("parseCliArgs", () => {
       expect(error).toBeInstanceOf(CliUsageError);
       expect((error as Error).message).toContain("Usage:");
     }
-  });
-
-  it("exposes the documented default asset base URL", () => {
-    expect(DEFAULT_ASSET_BASE_URL).toBe("/wp-content/uploads/wp-figma-gen-assets");
   });
 });

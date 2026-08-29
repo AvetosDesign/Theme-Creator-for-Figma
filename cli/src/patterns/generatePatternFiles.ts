@@ -58,8 +58,9 @@ const buildPatternJson = (title: string, content: string): WpPatternExport => ({
  *    available at generation time to resolve a live URL for content that
  *    will only ever exist as stored post content, so `src` is built from a
  *    generation-time-known `assetBaseUrl` instead (`mapNode.ts`'s
- *    `ImageSrcMode`), passed in by the caller (`commands/patterns.ts`,
- *    defaulting per `cliArgs.ts`'s `DEFAULT_ASSET_BASE_URL`).
+ *    `ImageSrcMode`), passed in by the caller (D105: `targets/wordpress/
+ *    index.ts`'s `modes.patterns.run()`, defaulting per that file's own
+ *    `DEFAULT_ASSET_BASE_URL` — moved there from `cliArgs.ts`).
  * 2. **No `theme.json`.** Theme mode registers Figma-variable-bound colors
  *    and named text styles as real `theme.json` presets
  *    (`generateThemeTokens.ts`, D26) so the WP editor's color/typography

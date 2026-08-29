@@ -1,18 +1,26 @@
 #!/usr/bin/env node
 import { CliUsageError, parseCliArgs } from "./cliArgs.ts";
 import { DesignBundleValidationError, loadDesignBundle } from "./core/loadBundle.ts";
-import { generateTheme } from "./commands/theme.ts";
-import { generatePatterns } from "./commands/patterns.ts";
+import { generate } from "./commands/generate.ts";
 import { getCliVersion } from "./cliVersion.ts";
 
 export { parseCliArgs } from "./cliArgs.ts";
 export { loadDesignBundle } from "./core/loadBundle.ts";
 export type { LoadedDesignBundle } from "./core/loadBundle.ts";
 
-// D38: theme mode's font self-hosting step makes a real network call
-// (Google Fonts), so generateTheme (and therefore main) is now async —
-// was synchronous before this. generatePatterns (patterns mode) stays
-// synchronous; Phase 4 is paused and this feature wasn't extended there.
+/**
+ * D105 (Phase 8 step 7): `main` used to branch on `args.mode === "theme"`
+ * directly, calling `generateTheme`/`generatePatterns` from
+ * `commands/theme.ts`/`commands/patterns.ts`. Both of those, and the
+ * branch itself, are gone — `commands/generate.ts`'s `generate()` now
+ * resolves the target (`args.target`, defaulting to `"wordpress"`) and
+ * mode (`args.mode`) from `targets/registry.ts` itself, so `index.ts` has
+ * no target/mode-specific knowledge left at all. Still `async`/awaited
+ * regardless of which mode ends up running (theme mode's font
+ * self-hosting is a real network call, D38; patterns mode is synchronous
+ * — `generate()` awaits either way, since `TargetMode.run()`'s return
+ * type is `Promise<void> | void`).
+ */
 const main = async (argv: readonly string[]): Promise<void> => {
   // D80: checked before parseCliArgs, same as --help conceptually, but
   // --version deliberately does NOT go through CliUsageError — that class
@@ -27,12 +35,7 @@ const main = async (argv: readonly string[]): Promise<void> => {
 
   const args = parseCliArgs(argv);
   const loaded = loadDesignBundle(args.bundlePath);
-
-  if (args.mode === "theme") {
-    await generateTheme(loaded, args.outDir, args.themeSlug, args.downloadFonts, args.themeName);
-  } else {
-    generatePatterns(loaded, args.outDir, args.assetBaseUrl);
-  }
+  await generate(loaded, args.target, args.mode, args.modeArgs, args.outDir);
 };
 
 // Only run when executed directly (node dist/index.js / tsx src/index.ts),

@@ -3,7 +3,7 @@ import type { MapNodeContext } from "../../blocks/mapNode.ts";
 import { dispatchDesignNode } from "../../blocks/mapNode.ts";
 import type { PublishTarget, TargetMode } from "../target.ts";
 import type { DesignBundle } from "../../core/types/designBundle";
-import { CliUsageError, DEFAULT_ASSET_BASE_URL } from "../../cliArgs.ts";
+import { CliUsageError } from "../../cliArgs.ts";
 import { generateThemeFiles } from "../../theme/generateThemeFiles.ts";
 import { generatePatternFiles } from "../../patterns/generatePatternFiles.ts";
 
@@ -122,6 +122,22 @@ const themeMode: TargetMode<ThemeModeOptions> = {
     }
   },
 };
+
+/**
+ * D105 (Phase 8 step 7): moved here from `cliArgs.ts` — this is
+ * WordPress patterns mode's own default, not a CLI-global concept.
+ * Unlike theme mode's `patterns/*.php` (D31), a pattern imported via
+ * "Import from JSON" has no PHP execution available to resolve a live
+ * asset URL, so patterns mode needs a generation-time-known base URL
+ * baked directly into each `<img src>`. This default is a guess, loudly
+ * flagged as such at generation time (see `run()` below) — same
+ * "diagnosable, not silently wrong" posture as D30's abandoned
+ * theme-mode attempt at the same problem. The WordPress developer either
+ * uploads the generated `/assets` folder to this exact path relative to
+ * their site root, or re-runs with `--asset-base-url` pointed at
+ * wherever they actually put it.
+ */
+const DEFAULT_ASSET_BASE_URL = "/wp-content/uploads/wp-figma-gen-assets";
 
 export interface PatternsModeOptions {
   assetBaseUrl?: string;
