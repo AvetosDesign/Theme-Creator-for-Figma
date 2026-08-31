@@ -1,12 +1,13 @@
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import type { DesignBundle } from "../core/types/designBundle";
 import { mapDesignNode, renderBlock, asRenderRoot } from "../blocks/index.ts";
 import type { ImageSrcMode, MappingWarning } from "../blocks/index.ts";
 import { assignUniqueSlugs } from "../core/slugify.ts";
 import { createStylesheet, renderStylesheet } from "../core/style/stylesheet.ts";
+import type { OutputSink } from "../core/outputSink.ts";
+import { encodeText } from "../core/textEncoding.ts";
 
 export interface GeneratePatternsResult {
+  /** Phase 9: `sink.describe()` — see `GenerateThemeResult.outDir`'s comment in `generateThemeFiles.ts`. */
   outDir: string;
   patternSlugs: string[];
   warnings: MappingWarning[];
@@ -84,20 +85,21 @@ const buildPatternJson = (title: string, content: string): WpPatternExport => ({
  * separately) for patterns to render with correct layout/colors/spacing —
  * an explicit manual finishing step, same posture as D14/D25's other
  * intentionally-manual items.
+ *
+ * Phase 9: takes an `OutputSink` instead of an `outDir` string — see
+ * `generateThemeFiles.ts`'s own Phase 9 doc comment for the shared
+ * reasoning (no `mkdirSync`/`writeFileSync`, explicit `encodeText` for
+ * generated text content).
  */
 export const generatePatternFiles = (
   bundle: DesignBundle,
   assets: Record<string, Uint8Array>,
-  outDir: string,
+  sink: OutputSink,
   assetBaseUrl: string,
 ): GeneratePatternsResult => {
-  const assetsDir = join(outDir, "assets");
-  mkdirSync(outDir, { recursive: true });
-  mkdirSync(assetsDir, { recursive: true });
-
   for (const [fileName, bytes] of Object.entries(assets)) {
     const baseName = fileName.replace(/^assets\//, "");
-    writeFileSync(join(assetsDir, baseName), bytes);
+    sink.write(`assets/${baseName}`, bytes);
   }
 
   const slugs = assignUniqueSlugs(bundle.designs.map((d) => d.layerName));
@@ -119,15 +121,15 @@ export const generatePatternFiles = (
 
     const content = renderBlock(block);
     const json = buildPatternJson(design.layerName, content);
-    writeFileSync(join(outDir, `${slug}.json`), `${JSON.stringify(json, null, 2)}\n`);
+    sink.write(`${slug}.json`, encodeText(`${JSON.stringify(json, null, 2)}\n`));
   });
 
   const cssFileName = "wp-figma-gen-patterns.css";
   const rules = renderStylesheet(stylesheet);
-  writeFileSync(join(outDir, cssFileName), rules ? `${rules}\n` : "");
+  sink.write(cssFileName, encodeText(rules ? `${rules}\n` : ""));
 
   return {
-    outDir,
+    outDir: sink.describe(),
     patternSlugs: slugs,
     warnings,
     assetBaseUrl,

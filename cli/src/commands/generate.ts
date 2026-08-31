@@ -1,6 +1,7 @@
 import { CliUsageError } from "../cliArgs.ts";
 import type { LoadedDesignBundle } from "../core/loadBundle.ts";
 import { getTarget, targetRegistry } from "../targets/registry.ts";
+import type { OutputSink } from "../core/outputSink.ts";
 
 /**
  * D105 (Phase 8 step 7) — the collapsed replacement for `commands/
@@ -17,13 +18,19 @@ import { getTarget, targetRegistry } from "../targets/registry.ts";
  * mode's own leftover argv, run it. No target/mode-specific knowledge
  * lives here at all — that's the whole point of the `PublishTarget`/
  * `TargetMode` seam D94 set out to build.
+ *
+ * Phase 9: takes a pre-built `OutputSink` (`sink`) instead of a plain
+ * `outDir: string` — `index.ts` (the CLI entry point) is what constructs
+ * `createNodeDiskSink(args.outDir)` before calling this, so this function
+ * stays as agnostic to "disk vs. in-memory" as `TargetMode.run()` itself
+ * (`targets/target.ts`).
  */
 export const generate = async (
   loaded: LoadedDesignBundle,
   targetId: string,
   modeName: string,
   modeArgs: readonly string[],
-  outDir: string,
+  sink: OutputSink,
 ): Promise<void> => {
   const target = getTarget(targetId);
   if (!target) {
@@ -37,5 +44,5 @@ export const generate = async (
 
   const options = mode.parseOptions(modeArgs);
   const { bundle, assets } = loaded;
-  await mode.run(bundle, assets, outDir, options);
+  await mode.run(bundle, assets, sink, options);
 };

@@ -1,5 +1,6 @@
 import type { DesignBundle, DesignNode } from "../core/types/designBundle";
 import type { NodeClassification } from "../core/designTree.ts";
+import type { OutputSink } from "../core/outputSink.ts";
 
 /**
  * D102 (Phase 8 step 4) — the `PublishTarget`/`TargetMode` seam D94/D95
@@ -56,8 +57,15 @@ export interface TargetMode<TOptions> {
    * `bundle`/`assets` split rather than one `LoadedDesignBundle`, matching
    * how `commands/theme.ts`/`commands/patterns.ts` already destructure it
    * at their own call sites.
+   *
+   * Phase 9: takes an `OutputSink` rather than a plain `outDir: string` —
+   * see `core/outputSink.ts`'s doc comment. `commands/generate.ts` builds
+   * the sink (`createNodeDiskSink` for the CLI today) and passes it
+   * through unchanged; a future caller could pass `createInMemorySink()`
+   * instead without this interface, or any mode's `run()`, needing to
+   * change.
    */
-  run(bundle: DesignBundle, assets: Record<string, Uint8Array>, outDir: string, options: TOptions): Promise<void> | void;
+  run(bundle: DesignBundle, assets: Record<string, Uint8Array>, sink: OutputSink, options: TOptions): Promise<void> | void;
 }
 
 /**

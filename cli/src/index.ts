@@ -2,6 +2,7 @@
 import { CliUsageError, parseCliArgs } from "./cliArgs.ts";
 import { DesignBundleValidationError, loadDesignBundle } from "./core/loadBundle.ts";
 import { generate } from "./commands/generate.ts";
+import { createNodeDiskSink } from "./core/outputSink.ts";
 import { getCliVersion } from "./cliVersion.ts";
 
 export { parseCliArgs } from "./cliArgs.ts";
@@ -35,7 +36,7 @@ const main = async (argv: readonly string[]): Promise<void> => {
 
   const args = parseCliArgs(argv);
   const loaded = loadDesignBundle(args.bundlePath);
-  await generate(loaded, args.target, args.mode, args.modeArgs, args.outDir);
+  await generate(loaded, args.target, args.mode, args.modeArgs, createNodeDiskSink(args.outDir));
 };
 
 // Only run when executed directly (node dist/index.js / tsx src/index.ts),

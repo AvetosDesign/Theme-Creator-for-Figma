@@ -6,6 +6,7 @@ import type { DesignBundle } from "../../core/types/designBundle";
 import { CliUsageError } from "../../cliArgs.ts";
 import { generateThemeFiles } from "../../theme/generateThemeFiles.ts";
 import { generatePatternFiles } from "../../patterns/generatePatternFiles.ts";
+import type { OutputSink } from "../../core/outputSink.ts";
 
 /**
  * D104 (Phase 8 step 6) — filling in `WordPressTarget.modes`, deferred by
@@ -65,7 +66,7 @@ const themeMode: TargetMode<ThemeModeOptions> = {
   id: "theme",
   description: '"theme" -> generate a WordPress block theme scaffold (Phase 3)',
   parseOptions: parseThemeModeOptions,
-  run: async (bundle: DesignBundle, assets: Record<string, Uint8Array>, outDir: string, options: ThemeModeOptions): Promise<void> => {
+  run: async (bundle: DesignBundle, assets: Record<string, Uint8Array>, sink: OutputSink, options: ThemeModeOptions): Promise<void> => {
     console.log(`[theme] Loaded bundle "${bundle.meta.figmaFileName}" (schemaVersion ${bundle.schemaVersion})`);
     console.log(`[theme] ${bundle.designs.length} design(s): ${bundle.designs.map((d) => d.layerName).join(", ")}`);
     console.log(`[theme] ${Object.keys(assets).length} asset(s) resolved`);
@@ -73,7 +74,7 @@ const themeMode: TargetMode<ThemeModeOptions> = {
       console.log(`[theme] Theme Name overridden to "${options.themeName}" (bundle's own name was "${bundle.meta.figmaFileName}")`);
     }
 
-    const result = await generateThemeFiles(bundle, assets, outDir, options.themeSlug, {
+    const result = await generateThemeFiles(bundle, assets, sink, options.themeSlug, {
       downloadFonts: options.downloadFonts,
       themeName: options.themeName,
     });
@@ -83,7 +84,7 @@ const themeMode: TargetMode<ThemeModeOptions> = {
     );
 
     console.log(
-      `[theme] Wrote 1 shared template (page.html) + ${result.patternSlugs.length} starter pattern(s) + theme.json + style.css + functions.php + patterns/ to "${outDir}"`,
+      `[theme] Wrote 1 shared template (page.html) + ${result.patternSlugs.length} starter pattern(s) + theme.json + style.css + functions.php + patterns/ to "${sink.describe()}"`,
     );
     console.log(
       `[theme] functions.php enqueues style.css (D36) — WordPress block themes don't load it automatically. ` +
@@ -163,15 +164,15 @@ const patternsMode: TargetMode<PatternsModeOptions> = {
   id: "patterns",
   description: '"patterns" -> generate WordPress pattern-export JSON files (Phase 4)',
   parseOptions: parsePatternsModeOptions,
-  run: (bundle: DesignBundle, assets: Record<string, Uint8Array>, outDir: string, options: PatternsModeOptions): void => {
+  run: (bundle: DesignBundle, assets: Record<string, Uint8Array>, sink: OutputSink, options: PatternsModeOptions): void => {
     console.log(`[patterns] Loaded bundle "${bundle.meta.figmaFileName}" (schemaVersion ${bundle.schemaVersion})`);
     console.log(`[patterns] ${bundle.designs.length} design(s): ${bundle.designs.map((d) => d.layerName).join(", ")}`);
     console.log(`[patterns] ${Object.keys(assets).length} asset(s) resolved`);
 
     const resolvedAssetBaseUrl = options.assetBaseUrl || DEFAULT_ASSET_BASE_URL;
-    const result = generatePatternFiles(bundle, assets, outDir, resolvedAssetBaseUrl);
+    const result = generatePatternFiles(bundle, assets, sink, resolvedAssetBaseUrl);
 
-    console.log(`[patterns] Wrote ${result.patternSlugs.length} pattern JSON file(s) to "${outDir}"`);
+    console.log(`[patterns] Wrote ${result.patternSlugs.length} pattern JSON file(s) to "${sink.describe()}"`);
     console.log(`[patterns] Pattern slugs: ${result.patternSlugs.join(", ")}`);
 
     if (!options.assetBaseUrl) {

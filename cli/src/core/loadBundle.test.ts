@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
-import { DesignBundleValidationError, loadDesignBundle } from "./loadBundle.ts";
+import { DesignBundleValidationError, loadDesignBundle, loadDesignBundleFromZipBytes } from "./loadBundle.ts";
 import type { DesignBundle } from "./types/designBundle.ts";
 
 const emptyRoot = {
@@ -133,3 +133,38 @@ describe("loadDesignBundle", () => {
     expect(Object.keys(loaded.assets)).toEqual(["assets/first.png"]);
   });
 });
+
+describe("loadDesignBundleFromZipBytes", () => {
+  it("Phase 9: loads the same zip bytes loadDesignBundle(path) would, with no disk access at all", () => {
+    const bundle = baseBundle({
+      assets: [{ id: "a1", figmaNodeId: "1:2", fileName: "assets/hero.png", kind: "raster", width: 10, height: 10 }],
+    });
+    const heroBytes = new Uint8Array([1, 2, 3, 4]);
+    const manifest = new TextEncoder().encode(JSON.stringify(bundle));
+    const zipped = zipSync({ "design-bundle.json": manifest, "assets/hero.png": heroBytes });
+
+    const loaded = loadDesignBundleFromZipBytes(zipped, "<in-memory>");
+
+    expect(loaded.bundle.meta.figmaFileName).toBe("Test File");
+    expect(loaded.assets["assets/hero.png"]).toEqual(heroBytes);
+  });
+
+  it("loadDesignBundle(path) and loadDesignBundleFromZipBytes(bytes) agree on the same input (parity)", () => {
+    const bundle = baseBundle();
+    const manifest = new TextEncoder().encode(JSON.stringify(bundle));
+    const zipped = zipSync({ "design-bundle.json": manifest });
+    const path = writeTempZip(zipped);
+
+    const fromDisk = loadDesignBundle(path);
+    const fromBytes = loadDesignBundleFromZipBytes(zipped, path);
+
+    expect(fromBytes).toEqual(fromDisk);
+  });
+
+  it("throws DesignBundleValidationError (not a raw Error) for a non-zip buffer, same as loadDesignBundle", () => {
+    expect(() => loadDesignBundleFromZipBytes(new TextEncoder().encode("nope"), "<in-memory>")).toThrow(
+      DesignBundleValidationError,
+    );
+  });
+});
+

@@ -1,5 +1,3 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import type { DesignBundle, DesignNode } from "../core/types/designBundle";
 import { mapDesignNode, renderBlock, asRenderRoot } from "../blocks/index.ts";
 import type { MappingWarning } from "../blocks/index.ts";
@@ -11,8 +9,11 @@ import { buildThemeTokens } from "./generateThemeTokens.ts";
 import { createStylesheet, renderStylesheet } from "../core/style/stylesheet.ts";
 import { getCliVersion } from "../cliVersion.ts";
 import { collectFontRequests, resolveGoogleFonts, fontFaceCss } from "./googleFonts.ts";
+import type { OutputSink } from "../core/outputSink.ts";
+import { encodeText } from "../core/textEncoding.ts";
 
 export interface GenerateThemeResult {
+  /** Phase 9: `sink.describe()` — the disk path for `createNodeDiskSink`, or `"<in-memory>"` for `createInMemorySink`. Kept as a named field (rather than making callers hold onto the sink) since nothing downstream needs anything else from the sink once generation has finished. */
   outDir: string;
   /** D67: one starter-pattern slug per design (`writeStarterPatternFile`) — not Template slugs anymore, since D67 collapsed generation down to a single shared `templates/page.html`. Renamed from `templateSlugs` to match what these actually identify now. */
   patternSlugs: string[];
@@ -28,6 +29,19 @@ export interface GenerateThemeOptions {
   downloadFonts?: boolean;
   /** Overrides the "Theme Name:" header written into style.css (CLI: --theme-name), which otherwise defaults to the bundle's own bundle.meta.figmaFileName. See styleCssHeader()'s comment for why the Description line still references the real Figma source file regardless. */
   themeName?: string;
+  /**
+   * Phase 9: overrides `nextThemeVersion`'s call to `cliVersion.ts`'s
+   * `getCliVersion()`, which walks the filesystem for a `package.json` —
+   * a `node:fs`/`node:path`/`node:url` dependency this module otherwise
+   * has none of (see `core/outputSink.ts`'s doc comment). The CLI itself
+   * doesn't need to pass this — `nextThemeVersion` falls back to
+   * `getCliVersion()` when it's omitted, preserving today's exact
+   * behavior. A future caller running in an environment where
+   * `cliVersion.ts`'s disk walk isn't available (e.g. inside the Figma
+   * plugin sandbox) should always pass this explicitly instead, so that
+   * Node-only fallback is never actually invoked from there.
+   */
+  cliVersion?: string;
 }
 
 const FALLBACK_INDEX_TEMPLATE = `<!-- wp:group -->
@@ -97,16 +111,25 @@ const thinScaffoldTemplateHtml = (headerHtml: string | undefined, footerHtml: st
  * and may help avoid a stale cached theme.json merge under a persistent
  * object cache. A real, if partial, answer to needing a fresh version each
  * regeneration.
+ *
+ * Phase 9: reads the previous style.css via `sink.readPrevious("style.css")`
+ * instead of `existsSync`/`readFileSync` directly, and takes the current
+ * CLI version as a plain string parameter instead of calling
+ * `getCliVersion()` itself (see `GenerateThemeOptions.cliVersion`'s doc
+ * comment) — both changes needed so this function has no direct `node:fs`
+ * dependency of its own. `createInMemorySink`'s `readPrevious` always
+ * returns `undefined`, so generating in-memory always takes the "fresh
+ * version" branch below — see that sink's own doc comment for why that's
+ * the correct behavior, not a gap to fill in later.
  */
-const nextThemeVersion = (outDir: string): string => {
-  const cliVersion = getCliVersion();
+const nextThemeVersion = (sink: OutputSink, cliVersion: string): string => {
   const [cliMajor = "0", cliMinor = "0"] = cliVersion.split(".");
   const freshVersion = `${cliMajor}.${cliMinor}.0`;
 
-  const stylePath = join(outDir, "style.css");
-  if (!existsSync(stylePath)) return freshVersion;
+  const previousBytes = sink.readPrevious("style.css");
+  if (!previousBytes) return freshVersion;
 
-  const previous = readFileSync(stylePath, "utf-8");
+  const previous = Buffer.from(previousBytes).toString("utf-8");
   const match = previous.match(/^Version:\s*(\d+)\.(\d+)\.(\d+)\s*$/m);
   if (!match) return freshVersion;
 
@@ -275,8 +298,13 @@ add_action( 'init', function () {
  * reads the `Slug:` header literally, it does not need to match the
  * theme's actual installed folder name the way D30's now-abandoned
  * asset-URL approach did.
+ *
+ * Phase 9: writes through `sink.write("patterns/<name>.php", ...)` instead
+ * of `writeFileSync(join(patternsDir, ...))` — the "patterns/" prefix is
+ * now baked into the relative path here rather than the caller pre-joining
+ * an absolute `patternsDir`.
  */
-const writePatternFile = (patternsDir: string, patternSlug: string, title: string, body: string): void => {
+const writePatternFile = (sink: OutputSink, patternSlug: string, title: string, body: string): void => {
   const php = `<?php
 /**
  * Title: ${title}
@@ -286,7 +314,7 @@ const writePatternFile = (patternsDir: string, patternSlug: string, title: strin
 ?>
 ${body}
 `;
-  writeFileSync(join(patternsDir, `${patternSlug.split("/").pop()}.php`), php);
+  sink.write(`patterns/${patternSlug.split("/").pop()}.php`, encodeText(php));
 };
 
 /** `<!-- wp:pattern {"slug":"..."} /-->` — a template/part file's entire content once its real markup has moved into a pattern (D31). Still used for header/footer template parts (unchanged by D61) — never for a design's own content pattern anymore, see writeStarterPatternFile below. */
@@ -306,9 +334,11 @@ const patternInclusion = (patternSlug: string): string => `<!-- wp:pattern {"slu
  * individually editable blocks. No `Inserter: no` here (unlike header/
  * footer's own pattern files) — hiding it from the inserter would also
  * hide it from this exact picker, which is the whole point.
+ *
+ * Phase 9: writes through `sink` — see `writePatternFile`'s comment above.
  */
 const writeStarterPatternFile = (
-  patternsDir: string,
+  sink: OutputSink,
   patternSlug: string,
   title: string,
   body: string,
@@ -325,7 +355,7 @@ const writeStarterPatternFile = (
 ?>
 ${body}
 `;
-  writeFileSync(join(patternsDir, `${patternSlug.split("/").pop()}.php`), php);
+  sink.write(`patterns/${patternSlug.split("/").pop()}.php`, encodeText(php));
 };
 
 /**
@@ -480,26 +510,30 @@ const pruneTemplatePartChildren = (
  * `parts/footer.html` once and includes them in the shared Template via a
  * `<!-- wp:template-part --/>` inclusion instead of duplicating that
  * subtree's markup inline.
+ *
+ * Phase 9: takes an `OutputSink` instead of an `outDir` string — every
+ * `mkdirSync`/`writeFileSync` call below is now `sink.write(relativePath,
+ * bytes)`, and every generated string is explicitly encoded via
+ * `encodeText` first (a sink only ever deals in bytes — see
+ * `outputSink.ts` and `textEncoding.ts`'s own doc comments). No `mkdirSync`
+ * calls remain at all: `createNodeDiskSink.write` creates parent
+ * directories on demand, and `createInMemorySink` has no directories to
+ * create in the first place.
  */
 export const generateThemeFiles = async (
   bundle: DesignBundle,
   assets: Record<string, Uint8Array>,
-  outDir: string,
+  sink: OutputSink,
   themeSlugOverride?: string,
   options?: GenerateThemeOptions,
 ): Promise<GenerateThemeResult> => {
   const downloadFonts = options?.downloadFonts ?? true;
   const themeNameOverride = options?.themeName;
-  const templatesDir = join(outDir, "templates");
-  const assetsDir = join(outDir, "assets");
-  const patternsDir = join(outDir, "patterns");
-  mkdirSync(templatesDir, { recursive: true });
-  mkdirSync(assetsDir, { recursive: true });
-  mkdirSync(patternsDir, { recursive: true });
+  const cliVersion = options?.cliVersion ?? getCliVersion();
 
   for (const [fileName, bytes] of Object.entries(assets)) {
     const baseName = fileName.replace(/^assets\//, "");
-    writeFileSync(join(assetsDir, baseName), bytes);
+    sink.write(`assets/${baseName}`, bytes);
   }
 
   // D31: only used as a pattern-slug namespace prefix now (e.g.
@@ -529,8 +563,6 @@ export const generateThemeFiles = async (
   const templateParts = classifyTemplateParts(bundle);
 
   if (templateParts.header || templateParts.footer) {
-    const partsDir = join(outDir, "parts");
-    mkdirSync(partsDir, { recursive: true });
     (["header", "footer"] as const).forEach((area) => {
       const candidate = templateParts[area];
       if (!candidate) return;
@@ -540,8 +572,8 @@ export const generateThemeFiles = async (
       // static and can never resolve a live theme asset URL. The part
       // file itself becomes just a one-line reference.
       const patternSlug = `${themeSlug}/${area}`;
-      writePatternFile(patternsDir, patternSlug, TEMPLATE_PART_TITLES[area], renderBlock(block));
-      writeFileSync(join(partsDir, `${area}.html`), `${patternInclusion(patternSlug)}\n`);
+      writePatternFile(sink, patternSlug, TEMPLATE_PART_TITLES[area], renderBlock(block));
+      sink.write(`parts/${area}.html`, encodeText(`${patternInclusion(patternSlug)}\n`));
     });
   }
 
@@ -581,7 +613,7 @@ export const generateThemeFiles = async (
     // attached to a Page changed, not how it resolves asset URLs.
     const patternSlug = `${themeSlug}/${slug}`;
     writeStarterPatternFile(
-      patternsDir,
+      sink,
       patternSlug,
       design.layerName,
       renderBlock(block),
@@ -603,9 +635,9 @@ export const generateThemeFiles = async (
   const footerHtml = templateParts.footer
     ? templatePartInclusion("footer", CHROME_Z_INDEX, stylesheet).renderRaw(0)
     : undefined;
-  writeFileSync(join(templatesDir, "page.html"), thinScaffoldTemplateHtml(headerHtml, footerHtml));
+  sink.write("templates/page.html", encodeText(thinScaffoldTemplateHtml(headerHtml, footerHtml)));
 
-  writeFileSync(join(templatesDir, "index.html"), FALLBACK_INDEX_TEMPLATE);
+  sink.write("templates/index.html", encodeText(FALLBACK_INDEX_TEMPLATE));
 
   // D38: self-host matching Google Fonts font files before style.css is
   // written, so the resulting @font-face rules can be prepended ahead of
@@ -621,10 +653,8 @@ export const generateThemeFiles = async (
     ? await resolveGoogleFonts(collectFontRequests(bundle), (message) => warnings.push({ nodeId: "<fonts>", message }))
     : { faces: [], resolvedFamilies: [], unresolvedFamilies: [] };
   if (fontsResult.faces.length > 0) {
-    const fontsDir = join(assetsDir, "fonts");
-    mkdirSync(fontsDir, { recursive: true });
     for (const face of fontsResult.faces) {
-      writeFileSync(join(fontsDir, face.fileName), face.bytes);
+      sink.write(`assets/fonts/${face.fileName}`, face.bytes);
     }
     fontFacesBlock = `${fontFaceCss(fontsResult.faces)}\n\n`;
   }
@@ -633,16 +663,18 @@ export const generateThemeFiles = async (
   // been mapped, so `stylesheet` holds every generated-class rule from the
   // whole run. This is the theme's real stylesheet now.
   const rules = renderStylesheet(stylesheet);
-  const version = nextThemeVersion(outDir);
-  writeFileSync(
-    join(outDir, "style.css"),
-    styleCssHeader(bundle, version, themeNameOverride) + (fontFacesBlock ? `\n${fontFacesBlock}` : "") + (rules ? `\n${rules}\n` : ""),
+  const version = nextThemeVersion(sink, cliVersion);
+  sink.write(
+    "style.css",
+    encodeText(
+      styleCssHeader(bundle, version, themeNameOverride) + (fontFacesBlock ? `\n${fontFacesBlock}` : "") + (rules ? `\n${rules}\n` : ""),
+    ),
   );
 
   // D36: style.css above is never loaded without this — see its doc
   // comment. Same version string as style.css's own `Version:` header, so
   // one regeneration cache-busts both consistently.
-  writeFileSync(join(outDir, "functions.php"), functionsPhpContent(themeSlug, version));
+  sink.write("functions.php", encodeText(functionsPhpContent(themeSlug, version)));
 
   const themeJson: Record<string, unknown> = {
     $schema: "https://schemas.wp.org/trunk/theme.json",
@@ -705,10 +737,10 @@ export const generateThemeFiles = async (
   if (templatePartEntries.length > 0) {
     themeJson.templateParts = templatePartEntries;
   }
-  writeFileSync(join(outDir, "theme.json"), `${JSON.stringify(themeJson, null, 2)}\n`);
+  sink.write("theme.json", encodeText(`${JSON.stringify(themeJson, null, 2)}\n`));
 
   return {
-    outDir,
+    outDir: sink.describe(),
     patternSlugs: slugs,
     warnings,
     templateParts,

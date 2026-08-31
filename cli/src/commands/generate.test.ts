@@ -7,6 +7,7 @@ import { CliUsageError } from "../cliArgs.ts";
 import { targetRegistry } from "../targets/registry.ts";
 import type { DesignBundle } from "../core/types/designBundle.ts";
 import type { LoadedDesignBundle } from "../core/loadBundle.ts";
+import { createNodeDiskSink } from "../core/outputSink.ts";
 
 /**
  * D106 — tests for `commands/generate.ts`'s target/mode resolution, left
@@ -87,26 +88,26 @@ describe("generate", () => {
   });
 
   it("throws CliUsageError naming the registered targets when --target is unknown", async () => {
-    await expect(generate(loaded(), "drupal", "theme", [], tmpOutDir())).rejects.toThrow(CliUsageError);
-    await expect(generate(loaded(), "drupal", "theme", [], tmpOutDir())).rejects.toThrow(/drupal/);
-    await expect(generate(loaded(), "drupal", "theme", [], tmpOutDir())).rejects.toThrow(/wordpress/);
+    await expect(generate(loaded(), "drupal", "theme", [], createNodeDiskSink(tmpOutDir()))).rejects.toThrow(CliUsageError);
+    await expect(generate(loaded(), "drupal", "theme", [], createNodeDiskSink(tmpOutDir()))).rejects.toThrow(/drupal/);
+    await expect(generate(loaded(), "drupal", "theme", [], createNodeDiskSink(tmpOutDir()))).rejects.toThrow(/wordpress/);
   });
 
   it("throws CliUsageError naming the target's available modes when --mode is unknown for a real target", async () => {
-    await expect(generate(loaded(), "wordpress", "bogus", [], tmpOutDir())).rejects.toThrow(CliUsageError);
-    await expect(generate(loaded(), "wordpress", "bogus", [], tmpOutDir())).rejects.toThrow(/bogus/);
-    await expect(generate(loaded(), "wordpress", "bogus", [], tmpOutDir())).rejects.toThrow(/theme/);
-    await expect(generate(loaded(), "wordpress", "bogus", [], tmpOutDir())).rejects.toThrow(/patterns/);
+    await expect(generate(loaded(), "wordpress", "bogus", [], createNodeDiskSink(tmpOutDir()))).rejects.toThrow(CliUsageError);
+    await expect(generate(loaded(), "wordpress", "bogus", [], createNodeDiskSink(tmpOutDir()))).rejects.toThrow(/bogus/);
+    await expect(generate(loaded(), "wordpress", "bogus", [], createNodeDiskSink(tmpOutDir()))).rejects.toThrow(/theme/);
+    await expect(generate(loaded(), "wordpress", "bogus", [], createNodeDiskSink(tmpOutDir()))).rejects.toThrow(/patterns/);
   });
 
   it("propagates a resolved mode's own parseOptions() rejection for an unrecognized mode-specific flag", async () => {
-    await expect(generate(loaded(), "wordpress", "patterns", ["--bogus"], tmpOutDir())).rejects.toThrow(CliUsageError);
+    await expect(generate(loaded(), "wordpress", "patterns", ["--bogus"], createNodeDiskSink(tmpOutDir()))).rejects.toThrow(CliUsageError);
   });
 
   it("resolves wordpress/patterns end to end -- parses modeArgs, then runs, producing real output that reflects the parsed option", async () => {
     const outDir = tmpOutDir();
 
-    await generate(loaded(bundleWithImage()), "wordpress", "patterns", ["--asset-base-url", "/custom/asset/path"], outDir);
+    await generate(loaded(bundleWithImage()), "wordpress", "patterns", ["--asset-base-url", "/custom/asset/path"], createNodeDiskSink(outDir));
 
     const files = readdirSync(outDir);
     expect(files).toContain("home.json");

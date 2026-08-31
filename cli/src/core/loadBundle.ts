@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
-import { createHash } from "node:crypto";
 import { unzipSync } from "fflate";
 import type { DesignBundle } from "./types/designBundle";
+import { hashBytes } from "./contentHash.ts";
 
 export interface LoadedDesignBundle {
   bundle: DesignBundle;
@@ -31,6 +31,11 @@ export class DesignBundleValidationError extends Error {}
  * `assets`, so every downstream consumer (`generateThemeFiles`,
  * `generatePatternFiles`) only ever sees and writes one file per unique
  * content hash.
+ *
+ * Phase 9: hashing goes through `contentHash.ts`'s portable `hashBytes`
+ * now, not `node:crypto`'s `createHash("sha256")` — see that module's own
+ * doc comment for why (this function's identity/dedup semantics are
+ * unchanged either way, only the hash algorithm is).
  */
 export const dedupeAssetsByContent = (
   bundle: DesignBundle,
@@ -40,7 +45,7 @@ export const dedupeAssetsByContent = (
   const renameToCanonical = new Map<string, string>();
 
   for (const [fileName, bytes] of Object.entries(assets)) {
-    const hash = createHash("sha256").update(bytes).digest("hex");
+    const hash = hashBytes(bytes);
     const canonical = canonicalFileNameByHash.get(hash);
     if (canonical) {
       renameToCanonical.set(fileName, canonical);
@@ -64,8 +69,9 @@ export const dedupeAssetsByContent = (
 };
 
 /**
- * Loads and validates a Design Bundle zip (design-bundle.json + /assets),
- * per ClaudeFiles/03-design-bundle-schema-draft.md. This is Stage 2's only
+ * Loads and validates an already-in-memory Design Bundle zip (its raw
+ * bytes — however the caller got them) — per
+ * ClaudeFiles/03-design-bundle-schema-draft.md. This is Stage 2's only
  * point of contact with Stage 1's output — everything downstream (theme
  * mode, patterns mode) works off the returned in-memory shape, never the
  * raw zip.
@@ -73,30 +79,31 @@ export const dedupeAssetsByContent = (
  * Only schemaVersion 1 is understood right now. Bumping the bundle schema
  * later should mean adding a migration path here, not silently accepting
  * an unknown shape.
+ *
+ * Phase 9: split out of `loadDesignBundle` below — this half has no
+ * Node-only dependency (`unzipSync`, `JSON.parse`, and `hashBytes` are all
+ * portable), which is what lets a future Figma-plugin caller load a bundle
+ * it already has in memory (e.g. from `fetch`/a File input) without ever
+ * touching `node:fs`. `loadDesignBundle(path)` below is now a thin
+ * Node-only wrapper around this function.
  */
-export const loadDesignBundle = (bundlePath: string): LoadedDesignBundle => {
-  let zipBytes: Uint8Array;
-  try {
-    zipBytes = readFileSync(bundlePath);
-  } catch (error) {
-    throw new DesignBundleValidationError(
-      `Could not read bundle at "${bundlePath}": ${(error as Error).message}`,
-    );
-  }
-
+export const loadDesignBundleFromZipBytes = (
+  zipBytes: Uint8Array,
+  sourceLabel: string,
+): LoadedDesignBundle => {
   let files: Record<string, Uint8Array>;
   try {
     files = unzipSync(zipBytes);
   } catch (error) {
     throw new DesignBundleValidationError(
-      `"${bundlePath}" is not a valid zip file: ${(error as Error).message}`,
+      `"${sourceLabel}" is not a valid zip file: ${(error as Error).message}`,
     );
   }
 
   const manifestBytes = files["design-bundle.json"];
   if (!manifestBytes) {
     throw new DesignBundleValidationError(
-      `"${bundlePath}" has no design-bundle.json at its root — is this a Design Bundle zip?`,
+      `"${sourceLabel}" has no design-bundle.json at its root — is this a Design Bundle zip?`,
     );
   }
 
@@ -105,7 +112,7 @@ export const loadDesignBundle = (bundlePath: string): LoadedDesignBundle => {
     bundle = JSON.parse(Buffer.from(manifestBytes).toString("utf-8"));
   } catch (error) {
     throw new DesignBundleValidationError(
-      `design-bundle.json in "${bundlePath}" is not valid JSON: ${(error as Error).message}`,
+      `design-bundle.json in "${sourceLabel}" is not valid JSON: ${(error as Error).message}`,
     );
   }
 
@@ -148,4 +155,24 @@ export const loadDesignBundle = (bundlePath: string): LoadedDesignBundle => {
   dedupeAssetsByContent(bundle, assets);
 
   return { bundle, assets };
+};
+
+/**
+ * Node-only entry point: reads a Design Bundle zip from a path on disk,
+ * then hands off to `loadDesignBundleFromZipBytes` for everything else.
+ * This is the only remaining `node:fs` touchpoint in this module — the
+ * CLI's own call site (`index.ts`) is unaffected by the Phase 9 split
+ * above, since this function's signature and behavior are unchanged.
+ */
+export const loadDesignBundle = (bundlePath: string): LoadedDesignBundle => {
+  let zipBytes: Uint8Array;
+  try {
+    zipBytes = readFileSync(bundlePath);
+  } catch (error) {
+    throw new DesignBundleValidationError(
+      `Could not read bundle at "${bundlePath}": ${(error as Error).message}`,
+    );
+  }
+
+  return loadDesignBundleFromZipBytes(zipBytes, bundlePath);
 };
