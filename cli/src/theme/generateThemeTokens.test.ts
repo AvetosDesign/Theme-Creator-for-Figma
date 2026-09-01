@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildThemeTokens } from "./generateThemeTokens.ts";
+import { buildThemeTokens, buildNamedStyleClasses } from "./generateThemeTokens.ts";
+import { createStylesheet } from "../core/style/stylesheet.ts";
 import type { DesignBundle } from "../core/types/designBundle.ts";
 
 const emptyRoot = {
@@ -94,5 +95,73 @@ describe("buildThemeTokens", () => {
     const tokens = buildThemeTokens(bundle);
     expect(tokens.fontFamilies).toHaveLength(2);
     expect(tokens.fontFamilies.map((f) => f.fontFamily).sort()).toEqual(["Inter", "Roboto Mono"]);
+  });
+});
+
+describe("buildNamedStyleClasses", () => {
+  it("registers one shared class per named style, named after the style's own font-size slug", () => {
+    const bundle = baseBundle({
+      textStyles: {
+        "ts-h2": { name: "Heading/H2", fontFamily: "Inter", fontSize: 48, fontWeight: "600", lineHeight: 1.2 },
+      },
+    });
+    const tokens = buildThemeTokens(bundle);
+    const stylesheet = createStylesheet();
+    const classes = buildNamedStyleClasses(bundle, tokens, stylesheet);
+
+    // Sean's explicit naming requirement: the class name stays legibly
+    // tied to the Figma style, and shares its slug with the font-size
+    // preset D26 already generates for the same style.
+    expect(tokens.fontSizeSlugByTextStyleId.get("ts-h2")).toBe("heading-h-2");
+    expect(classes.get("ts-h2")?.className).toBe("ts-heading-h-2");
+    expect(classes.get("ts-h2")?.style).toEqual(bundle.styles.textStyles["ts-h2"]);
+    expect(stylesheet.rules.get("ts-heading-h-2")).toBe(
+      'font-family: "Inter", sans-serif; font-weight: 600; line-height: 1.2',
+    );
+  });
+
+  it("omits line-height when the style's own line-height is 0 (Figma 'Auto')", () => {
+    const bundle = baseBundle({
+      textStyles: {
+        "ts-h1": { name: "Heading/H1", fontFamily: "Inter", fontSize: 64, fontWeight: "700", lineHeight: 0 },
+      },
+    });
+    const tokens = buildThemeTokens(bundle);
+    const stylesheet = createStylesheet();
+    buildNamedStyleClasses(bundle, tokens, stylesheet);
+    expect(stylesheet.rules.get("ts-heading-h-1")).toBe('font-family: "Inter", sans-serif; font-weight: 700');
+  });
+
+  it("never merges two named styles into one shared class, even with byte-identical declarations", () => {
+    const bundle = baseBundle({
+      textStyles: {
+        "ts-a": { name: "Card Title", fontFamily: "Inter", fontSize: 20, fontWeight: "600", lineHeight: 1.3 },
+        "ts-b": { name: "Section Title", fontFamily: "Inter", fontSize: 32, fontWeight: "600", lineHeight: 1.3 },
+      },
+    });
+    const tokens = buildThemeTokens(bundle);
+    const stylesheet = createStylesheet();
+    const classes = buildNamedStyleClasses(bundle, tokens, stylesheet);
+
+    // Same font-family/weight/line-height (only font-size differs, which
+    // this class deliberately doesn't cover), but two distinct Figma
+    // styles -- each keeps its own class, per Sean's naming requirement.
+    expect(classes.get("ts-a")?.className).toBe("ts-card-title");
+    expect(classes.get("ts-b")?.className).toBe("ts-section-title");
+    expect(stylesheet.rules.size).toBe(2);
+  });
+
+  it("disambiguates two named styles that slugify to the same value, reusing the font-size slug's own disambiguation", () => {
+    const bundle = baseBundle({
+      textStyles: {
+        "ts-1": { name: "Primary!", fontFamily: "Inter", fontSize: 16, fontWeight: "400", lineHeight: 1.4 },
+        "ts-2": { name: "Primary?", fontFamily: "Inter", fontSize: 18, fontWeight: "400", lineHeight: 1.4 },
+      },
+    });
+    const tokens = buildThemeTokens(bundle);
+    const stylesheet = createStylesheet();
+    const classes = buildNamedStyleClasses(bundle, tokens, stylesheet);
+    expect(classes.get("ts-1")?.className).toBe("ts-primary");
+    expect(classes.get("ts-2")?.className).toBe("ts-primary-2");
   });
 });

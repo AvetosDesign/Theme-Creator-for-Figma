@@ -5,7 +5,7 @@ import { assignUniqueSlugs, toSlug } from "../core/slugify.ts";
 import { templatePartInclusion } from "./templateParts.ts";
 import { classifyTemplateParts, pickTopmostChild, pickBottommostChild } from "../core/classify/chromeDetect.ts";
 import type { ClassifiedTemplateParts, TemplatePartArea } from "../core/classify/chromeDetect.ts";
-import { buildThemeTokens } from "./generateThemeTokens.ts";
+import { buildThemeTokens, buildNamedStyleClasses } from "./generateThemeTokens.ts";
 import { createStylesheet, renderStylesheet } from "../core/style/stylesheet.ts";
 import { getCliVersion } from "../cliVersion.ts";
 import { collectFontRequests, resolveGoogleFonts, fontFaceCss } from "./googleFonts.ts";
@@ -551,12 +551,19 @@ export const generateThemeFiles = async (
   // which is already unique within a bundle, so accumulating into one
   // stylesheet is safe and means style.css only needs writing once, at the end.
   const stylesheet = createStylesheet();
+  // Phase C (D127): registered up front, before any node is mapped, so
+  // every named-style rule appears before any per-node rule in the
+  // rendered style.css — see mapNode.ts's mapText for why that ordering
+  // matters (a genuinely-diverging per-node declaration needs to win the
+  // cascade over this shared baseline).
+  const namedStyleClassByTextStyleId = buildNamedStyleClasses(bundle, tokens, stylesheet);
   const mapCtx = () => ({
     assetsById,
     warnings,
     textStyles: bundle.styles.textStyles,
     colorSlugByVariableRef: tokens.colorSlugByVariableRef,
     fontSizeSlugByTextStyleId: tokens.fontSizeSlugByTextStyleId,
+    namedStyleClassByTextStyleId,
     stylesheet,
   });
 

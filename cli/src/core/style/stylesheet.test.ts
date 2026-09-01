@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addRule, addPositionRule, createStylesheet, renderStylesheet } from "./stylesheet.ts";
+import { addRule, addPositionRule, addNamedRule, createStylesheet, renderStylesheet } from "./stylesheet.ts";
 
 describe("stylesheet", () => {
   it("starts empty", () => {
@@ -88,5 +88,35 @@ describe("stylesheet", () => {
     expect(lookClass).toBe("fig-a");
     expect(positionClass).toBe("fig-a-pos");
     expect(sheet.rules.size).toBe(2);
+  });
+
+  it("Phase C: addNamedRule always registers its own rule under the given class name, never deduped, even with identical declarations to another named rule", () => {
+    const sheet = createStylesheet();
+    const first = addNamedRule(sheet, "ts-heading-h1", "font-family: Inter; font-weight: 700");
+    const second = addNamedRule(sheet, "ts-heading-h2", "font-family: Inter; font-weight: 700");
+    expect(first).toBe("ts-heading-h1");
+    expect(second).toBe("ts-heading-h2");
+    expect(sheet.rules.size).toBe(2);
+    expect(renderStylesheet(sheet)).toBe(
+      ".ts-heading-h1 { font-family: Inter; font-weight: 700; }\n.ts-heading-h2 { font-family: Inter; font-weight: 700; }",
+    );
+  });
+
+  it("addNamedRule no-ops when declarations are empty", () => {
+    const sheet = createStylesheet();
+    const cls = addNamedRule(sheet, "ts-empty", "");
+    expect(cls).toBeUndefined();
+    expect(sheet.rules.size).toBe(0);
+  });
+
+  it("a named-style class (Phase C), a node's look rule (Phase A), and its position rule (Phase B) coexist as three separate rules", () => {
+    const sheet = createStylesheet();
+    const namedClass = addNamedRule(sheet, "ts-body", "font-family: Inter; font-weight: 400");
+    const lookClass = addRule(sheet, "paragraph", "fig-a", "color: #333333");
+    const positionClass = addPositionRule(sheet, "fig-a-pos", "position: absolute !important; left: 5px; top: 5px");
+    expect(namedClass).toBe("ts-body");
+    expect(lookClass).toBe("fig-a");
+    expect(positionClass).toBe("fig-a-pos");
+    expect(sheet.rules.size).toBe(3);
   });
 });

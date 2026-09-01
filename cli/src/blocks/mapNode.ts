@@ -8,6 +8,7 @@ import { renderForm } from "./formMapping.ts";
 import { renderLink } from "./linkMapping.ts";
 import { walkDesignTree, type NodeClassification } from "../core/designTree.ts";
 import type { PublishTarget } from "../targets/target.ts";
+import type { NamedStyleClass } from "../theme/generateThemeTokens.ts";
 
 /**
  * Phase 4: image `src` resolution differs by output mode, unlike D31's
@@ -34,6 +35,18 @@ export interface MapNodeContext {
   colorSlugByVariableRef?: ReadonlyMap<string, string>;
   /** textStyleId -> theme.json fontSizes slug (generateThemeTokens.ts). When a text run's textStyleId resolves here, the mapper emits a `fontSize` preset attr + has-{slug}-font-size class. */
   fontSizeSlugByTextStyleId?: ReadonlyMap<string, string>;
+  /**
+   * Phase C (D127, CSS optimization): textStyleId -> the shared "ts-*"
+   * class generated for that named style (generateThemeTokens.ts's
+   * buildNamedStyleClasses), plus the resolved style itself. When a text
+   * run's textStyleId resolves here, mapText applies the shared class and
+   * omits any of family/weight/line-height from its own per-node
+   * declarations that match the named style's own values -- an actual
+   * per-run override (e.g. bold applied on top of a normally-regular
+   * style) still gets its own per-node declaration for just the
+   * properties that genuinely diverge.
+   */
+  namedStyleClassByTextStyleId?: ReadonlyMap<string, NamedStyleClass>;
   /** Accumulates one CSS rule per node that needs custom styling beyond what a WP preset covers (D27) — mutated as mapping recurses. */
   stylesheet: Stylesheet;
   warnings: MappingWarning[];
@@ -76,6 +89,10 @@ const mapText = (node: DesignNode, ctx: MapNodeContext, level: number | undefine
 
   const textColorSlug = first?.fillRef ? ctx.colorSlugByVariableRef?.get(first.fillRef) : undefined;
   const fontSizeSlug = first?.textStyleId ? ctx.fontSizeSlugByTextStyleId?.get(first.textStyleId) : undefined;
+  // Phase C (D127): the named style this run's textStyleId resolves
+  // to, if any -- see MapNodeContext.namedStyleClassByTextStyleId's doc
+  // comment for how this changes the per-node declarations built below.
+  const namedStyle = first?.textStyleId ? ctx.namedStyleClassByTextStyleId?.get(first.textStyleId) : undefined;
 
   const presetAttrs: Record<string, unknown> = {};
   if (textColorSlug) presetAttrs.textColor = textColorSlug;
@@ -134,9 +151,17 @@ const mapText = (node: DesignNode, ctx: MapNodeContext, level: number | undefine
     layoutToDeclarations(textLayout),
     first
       ? joinStyles(
-          `font-family: ${fontFamilyDeclaration(first.fontFamily)}`,
+          // Phase C (D127): omitted when it matches namedStyle's own
+          // family -- see MapNodeContext.namedStyleClassByTextStyleId's
+          // doc comment.
+          namedStyle && namedStyle.style.fontFamily === first.fontFamily
+            ? undefined
+            : `font-family: ${fontFamilyDeclaration(first.fontFamily)}`,
           fontSizeSlug ? undefined : `font-size: ${first.fontSize}px`,
-          `font-weight: ${first.fontWeight}`,
+          // Phase C: omitted when it matches namedStyle's own weight.
+          namedStyle && namedStyle.style.fontWeight === first.fontWeight
+            ? undefined
+            : `font-weight: ${first.fontWeight}`,
           // D56 (corrected): `first.lineHeight` is a unitless *ratio*
           // (designBundleTree.ts's mapTextSegments deliberately computes
           // `lineHeightPx / fontSize`, e.g. `1.5`, not a raw px value) — a
@@ -156,7 +181,13 @@ const mapText = (node: DesignNode, ctx: MapNodeContext, level: number | undefine
           // omitted entirely when 0, letting the browser's own
           // `line-height: normal` apply — the real semantic equivalent of
           // Figma's "Auto."
-          first.lineHeight ? `line-height: ${first.lineHeight}` : undefined,
+          // Phase C: also omitted when it matches namedStyle's own
+          // line-height (same reasoning as family/weight above).
+          namedStyle && namedStyle.style.lineHeight === first.lineHeight
+            ? undefined
+            : first.lineHeight
+              ? `line-height: ${first.lineHeight}`
+              : undefined,
           textColorSlug || !first.fillHex ? undefined : `color: ${withAlpha(first.fillHex, first.fillOpacity)}`,
         )
       : undefined,
@@ -185,7 +216,16 @@ const mapText = (node: DesignNode, ctx: MapNodeContext, level: number | undefine
   // doc comment for why it's never deduped.
   const lookClass = addRule(ctx.stylesheet, level !== undefined ? "heading" : "paragraph", nodeClass, customDeclarations);
   const positionClass = addPositionRule(ctx.stylesheet, `${nodeClass}-pos`, layoutPositionToDeclarations(textLayout, node.paintOrder));
-  const customClass = [lookClass, positionClass].filter(Boolean).join(" ") || undefined;
+  // Phase C: namedStyle's shared class sits between the (possibly
+  // shared) look class and the always-per-node position class --
+  // render order in the stylesheet (named-style classes are all
+  // registered up front, before any node is mapped -- see
+  // generateThemeFiles.ts) means this class's declarations always come
+  // *before* lookClass's in style.css, so a genuinely-diverging
+  // per-node declaration in lookClass (an exception the checks above
+  // left in) correctly wins the cascade over this shared baseline,
+  // same specificity either way.
+  const customClass = [lookClass, namedStyle?.className, positionClass].filter(Boolean).join(" ") || undefined;
 
   // D27 follow-up: `customClass` is an extra HTML class with no WP block
   // support backing it — WordPress's own "custom className" support is

@@ -3,6 +3,7 @@ import { mapDesignNode, renderBlock, asRenderRoot } from "../blocks/index.ts";
 import type { ImageSrcMode, MappingWarning } from "../blocks/index.ts";
 import { assignUniqueSlugs } from "../core/slugify.ts";
 import { createStylesheet, renderStylesheet } from "../core/style/stylesheet.ts";
+import { buildThemeTokens, buildNamedStyleClasses } from "../theme/generateThemeTokens.ts";
 import type { OutputSink } from "../core/outputSink.ts";
 import { encodeText } from "../core/textEncoding.ts";
 
@@ -75,6 +76,18 @@ const buildPatternJson = (title: string, content: string): WpPatternExport => ({
  *    fallback path unconditionally, which is self-contained and renders
  *    correctly regardless of the destination theme.
  *
+ *    Phase C (D127/D131, CSS optimization) IS wired in here, though,
+ *    despite the "no theme.json" framing above — its named-style classes
+ *    are self-contained CSS with no theme.json dependency at all (unlike
+ *    the preset mechanism this point is actually about), so they fit this
+ *    module's own "self-contained, renders correctly regardless of the
+ *    destination theme" design goal rather than fighting it. `buildThemeTokens`
+ *    is called below purely to get its `fontSizeSlugByTextStyleId` (so
+ *    Phase C's `.ts-*` slugs stay consistent with theme mode's — see
+ *    `generateThemeTokens.ts`'s own doc comment) — its `colorPalette`/
+ *    `fontSizes`/`fontFamilies`/`colorSlugByVariableRef` outputs are never
+ *    consulted, and nothing here becomes a `theme.json` preset. See D131.
+ *
  * A third difference, also new for Phase 4: unlike theme mode, WordPress
  * never auto-enqueues a stylesheet for imported pattern content — there's no
  * `style.css` a block-theme activation wires up. The same generated-CSS-
@@ -107,6 +120,11 @@ export const generatePatternFiles = (
   const warnings: MappingWarning[] = [];
   const stylesheet = createStylesheet();
   const imageSrcMode: ImageSrcMode = { kind: "url", baseUrl: assetBaseUrl };
+  // D131: Phase C's named-style classes -- self-contained CSS, no
+  // theme.json involved, see this module's doc comment point 2. Only
+  // `fontSizeSlugByTextStyleId` from `buildThemeTokens` is actually used
+  // (for slug reuse); its other token outputs are discarded.
+  const namedStyleClassByTextStyleId = buildNamedStyleClasses(bundle, buildThemeTokens(bundle), stylesheet);
 
   bundle.designs.forEach((design, index) => {
     const slug = slugs[index];
@@ -115,8 +133,11 @@ export const generatePatternFiles = (
       warnings,
       stylesheet,
       imageSrcMode,
-      // No textStyles / colorSlugByVariableRef / fontSizeSlugByTextStyleId
-      // — see this module's doc comment, point 2.
+      namedStyleClassByTextStyleId,
+      // Still no textStyles / colorSlugByVariableRef / fontSizeSlugByTextStyleId
+      // — see this module's doc comment, point 2. Phase C (above) is the
+      // one deliberate exception to that "no theme.json" rule, not a
+      // reversal of it.
     });
 
     const content = renderBlock(block);

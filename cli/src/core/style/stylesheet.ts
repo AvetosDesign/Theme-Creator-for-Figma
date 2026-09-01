@@ -86,6 +86,27 @@ export const addPositionRule = (stylesheet: Stylesheet, className: string, decla
   return className;
 };
 
+/**
+ * Phase C (D130, CSS optimization): registers one shared class per Figma
+ * named text style, keyed by a caller-assigned, human-legible class name
+ * (not content-based dedup, unlike `addRule`) -- every named style always
+ * gets its own class, even when two different named styles happen to
+ * produce byte-identical declarations, so the class name stays legibly
+ * tied to *which* Figma style it came from (Sean's explicit requirement --
+ * see 09-css-optimization-strategy.md's Phase C section). Registers
+ * unconditionally under `className`, no dedup lookup -- callers are
+ * expected to call this at most once per named style (one class per
+ * style, assigned up front from `bundle.styles.textStyles`, not per
+ * node -- see `generateThemeTokens.ts`'s `buildNamedStyleClasses`).
+ * Returns `className` unchanged, or `undefined` when `declarations` is
+ * empty (nothing to register).
+ */
+export const addNamedRule = (stylesheet: Stylesheet, className: string, declarations: string): string | undefined => {
+  if (!declarations) return undefined;
+  stylesheet.rules.set(className, declarations);
+  return className;
+};
+
 /** Renders every accumulated rule as real CSS text, ready to append to style.css. */
 export const renderStylesheet = (stylesheet: Stylesheet): string =>
   Array.from(stylesheet.rules, ([className, declarations]) => `.${className} { ${declarations}; }`).join("\n");
