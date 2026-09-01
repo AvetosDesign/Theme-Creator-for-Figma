@@ -1,8 +1,8 @@
 import type { DesignBundleAsset, DesignBundleEffect, DesignBundleTextStyle, DesignNode } from "../core/types/designBundle";
 import type { GeneratedBlock, MappingWarning } from "./types.ts";
-import { escapeHtml, layoutToDeclarations, nodeStyleToDeclarations, joinStyles, fontFamilyDeclaration, withAlpha } from "../core/style/styleHelpers.ts";
+import { escapeHtml, layoutToDeclarations, layoutPositionToDeclarations, nodeStyleToDeclarations, joinStyles, fontFamilyDeclaration, withAlpha } from "../core/style/styleHelpers.ts";
 import { nodeClassFor } from "../core/style/nodeClass.ts";
-import { addRule } from "../core/style/stylesheet.ts";
+import { addRule, addPositionRule } from "../core/style/stylesheet.ts";
 import type { Stylesheet } from "../core/style/stylesheet.ts";
 import { renderForm } from "./formMapping.ts";
 import { renderLink } from "./linkMapping.ts";
@@ -131,7 +131,7 @@ const mapText = (node: DesignNode, ctx: MapNodeContext, level: number | undefine
   // affects the whole node, so it's applied standalone rather than
   // folded into the color.
   const customDeclarations = joinStyles(
-    layoutToDeclarations(textLayout, node.paintOrder),
+    layoutToDeclarations(textLayout),
     first
       ? joinStyles(
           `font-family: ${fontFamilyDeclaration(first.fontFamily)}`,
@@ -173,8 +173,19 @@ const mapText = (node: DesignNode, ctx: MapNodeContext, level: number | undefine
     node.text?.align ? `text-align: ${node.text.align.toLowerCase()}` : undefined,
   );
   const nodeClass = nodeClassFor(node.id);
-  addRule(ctx.stylesheet, nodeClass, customDeclarations);
-  const customClass = customDeclarations ? nodeClass : undefined;
+  // D127 (Phase A): "paragraph" vs "heading" as the dedup kind, not just
+  // "text" — coarser than per-level (Sean's call: level is already a real
+  // WP attr, never at risk of being lost by two different levels sharing
+  // a look-only rule; a future pass could split further into a generic
+  // "heading" rule plus a per-level size rule, mirroring how hand-written
+  // CSS usually separates a shared `h1,h2,h3{...}` block from each
+  // level's own font-size — flagged as a nice-to-have, not attempted
+  // here). D127 (Phase B): position is split into its own, always
+  // per-node rule via addPositionRule — see layoutPositionToDeclarations's
+  // doc comment for why it's never deduped.
+  const lookClass = addRule(ctx.stylesheet, level !== undefined ? "heading" : "paragraph", nodeClass, customDeclarations);
+  const positionClass = addPositionRule(ctx.stylesheet, `${nodeClass}-pos`, layoutPositionToDeclarations(textLayout, node.paintOrder));
+  const customClass = [lookClass, positionClass].filter(Boolean).join(" ") || undefined;
 
   // D27 follow-up: `customClass` is an extra HTML class with no WP block
   // support backing it — WordPress's own "custom className" support is
@@ -251,7 +262,7 @@ const mapImageLike = (node: DesignNode, ctx: MapNodeContext): GeneratedBlock => 
   // is relevant here). D47: paintOrder threaded into layoutToDeclarations
   // for z-index, same as every other node type.
   const layoutDeclarations = joinStyles(
-    layoutToDeclarations(node.layout, node.paintOrder),
+    layoutToDeclarations(node.layout),
     node.style.opacity !== undefined ? `opacity: ${node.style.opacity}` : undefined,
     // D72: same "this leaf builds its own declarations, doesn't go
     // through nodeStyleToDeclarations" reasoning as the opacity line
@@ -259,8 +270,11 @@ const mapImageLike = (node: DesignNode, ctx: MapNodeContext): GeneratedBlock => 
     node.style.blendMode !== undefined ? `mix-blend-mode: ${node.style.blendMode}` : undefined,
   );
   const nodeClass = nodeClassFor(node.id);
-  addRule(ctx.stylesheet, nodeClass, layoutDeclarations);
-  const customClass = layoutDeclarations ? nodeClass : undefined;
+  // D127: "image" as the dedup kind (Phase A) + a separate, never-deduped
+  // position rule (Phase B) — same pattern as mapText/mapContainer below.
+  const lookClass = addRule(ctx.stylesheet, "image", nodeClass, layoutDeclarations);
+  const positionClass = addPositionRule(ctx.stylesheet, `${nodeClass}-pos`, layoutPositionToDeclarations(node.layout, node.paintOrder));
+  const customClass = [lookClass, positionClass].filter(Boolean).join(" ") || undefined;
 
   return {
     blockName: "core/image",
@@ -438,7 +452,7 @@ const mapContainer = (
   // old `layout` JSON attr is gone, since WordPress's own layout support
   // generates a container class + stylesheet we were never reproducing).
   const declarations = joinStyles(
-    layoutToDeclarations(node.layout, node.paintOrder),
+    layoutToDeclarations(node.layout),
     // D60: matches `!important` on `position: absolute` in
     // `layoutToDeclarations` (styleHelpers.ts) — this element's own
     // `position` here happens to already agree with what Gutenberg's
@@ -451,8 +465,12 @@ const mapContainer = (
     backgroundImageDeclaration,
   );
   const nodeClass = nodeClassFor(node.id);
-  addRule(ctx.stylesheet, nodeClass, declarations);
-  const customClass = declarations ? nodeClass : undefined;
+  // D127: "container" as the dedup kind (Phase A) + a separate,
+  // never-deduped position rule (Phase B) — same pattern as
+  // mapText/mapImageLike above.
+  const lookClass = addRule(ctx.stylesheet, "container", nodeClass, declarations);
+  const positionClass = addPositionRule(ctx.stylesheet, `${nodeClass}-pos`, layoutPositionToDeclarations(node.layout, node.paintOrder));
+  const customClass = [lookClass, positionClass].filter(Boolean).join(" ") || undefined;
 
   // "has-background"/backgroundColor are only claimed when a real WP
   // preset backs them (attrs.backgroundColor set, which save() correctly

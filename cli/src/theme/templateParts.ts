@@ -65,7 +65,11 @@ export const templatePartInclusion = (
     const indent = indentStr(depth);
     const wrapperClass = `tpl-part-${area}`;
     if (zIndex !== undefined && stylesheet) {
-      addRule(stylesheet, wrapperClass, `position: relative; z-index: ${zIndex}`);
+      // D127: "container" kind — this is always the same fixed wrapperClass
+      // ("tpl-part-header"/"tpl-part-footer"), never node-id-based, so Phase
+      // A's dedup is a no-op here either way; the kind param just needs a
+      // value.
+      addRule(stylesheet, "container", wrapperClass, `position: relative; z-index: ${zIndex}`);
     }
     return `${indent}<!-- wp:template-part {"slug":"${area}","area":"${area}","className":"${wrapperClass}"} /-->`;
   },

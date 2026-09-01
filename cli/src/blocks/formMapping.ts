@@ -3,13 +3,14 @@ import type { MapNodeContext } from "./mapNode.ts";
 import {
   escapeHtml,
   layoutToDeclarations,
+  layoutPositionToDeclarations,
   nodeStyleToDeclarations,
   joinStyles,
   fontFamilyDeclaration,
   withAlpha,
 } from "../core/style/styleHelpers.ts";
 import { nodeClassFor } from "../core/style/nodeClass.ts";
-import { addRule } from "../core/style/stylesheet.ts";
+import { addRule, addPositionRule } from "../core/style/stylesheet.ts";
 import { toSlug } from "../core/slugify.ts";
 import type { DesignNode } from "../core/types/designBundle";
 import type { DetectedField, DetectedButton, DetectedForm } from "../core/classify/formDetect.ts";
@@ -82,14 +83,20 @@ const slugifyFieldName = (fieldName: string): string =>
 const boxClass = (node: DesignNode, ctx: MapNodeContext, extra?: string): string | undefined => {
   const declarations = joinStyles(
     "box-sizing: border-box",
-    layoutToDeclarations(node.layout, node.paintOrder),
+    layoutToDeclarations(node.layout),
     nodeStyleToDeclarations(node.style, false),
     extra,
   );
-  if (!declarations) return undefined;
-  const cls = nodeClassFor(node.id);
-  addRule(ctx.stylesheet, cls, declarations);
-  return cls;
+  const nodeClass = nodeClassFor(node.id);
+  // D127 (Phase A/B): "form" is the dedup kind for every generated class
+  // this file produces (wrappers, fields, buttons, labels alike) — one
+  // kind covers the whole form-rendering path, since it's all "form
+  // furniture" in Sean's "same nature" sense, distinct from a plain
+  // container/paragraph/image/link. Position (when present) still gets
+  // its own always-per-node rule, same as everywhere else.
+  const lookClass = addRule(ctx.stylesheet, "form", nodeClass, declarations);
+  const positionClass = addPositionRule(ctx.stylesheet, `${nodeClass}-pos`, layoutPositionToDeclarations(node.layout, node.paintOrder));
+  return [lookClass, positionClass].filter(Boolean).join(" ") || undefined;
 };
 
 // Minimal, intentionally-duplicated subset of mapText's font declarations
@@ -125,8 +132,7 @@ const renderField = (formSlug: string, detected: DetectedField, ctx: MapNodeCont
     const decl = captionDeclarations(detected.label);
     if (!decl) return undefined;
     const cls = nodeClassFor(detected.label.id);
-    addRule(ctx.stylesheet, cls, decl);
-    return cls;
+    return addRule(ctx.stylesheet, "form", cls, decl);
   })();
 
   const valueAttr = detected.isValue ? attr("value", valueText) : attr("placeholder", valueText);

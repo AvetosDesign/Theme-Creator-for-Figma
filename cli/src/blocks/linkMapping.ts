@@ -1,9 +1,9 @@
 import type { DesignBundleAsset } from "../core/types/designBundle";
 import type { GeneratedBlock } from "./types.ts";
 import type { MapNodeContext } from "./mapNode.ts";
-import { escapeHtml, layoutToDeclarations, nodeStyleToDeclarations, joinStyles, fontFamilyDeclaration, withAlpha } from "../core/style/styleHelpers.ts";
+import { escapeHtml, layoutToDeclarations, layoutPositionToDeclarations, nodeStyleToDeclarations, joinStyles, fontFamilyDeclaration, withAlpha } from "../core/style/styleHelpers.ts";
 import { nodeClassFor } from "../core/style/nodeClass.ts";
-import { addRule } from "../core/style/stylesheet.ts";
+import { addRule, addPositionRule } from "../core/style/stylesheet.ts";
 import { toSlug } from "../core/slugify.ts";
 import type { DesignNode } from "../core/types/designBundle";
 import type { DetectedLink } from "../core/classify/linkDetect.ts";
@@ -52,11 +52,24 @@ const fontDeclarations = (node: DesignNode): string | undefined => {
 
 const attr = (name: string, value: string | undefined): string => (value === undefined ? "" : ` ${name}="${escapeHtml(value)}"`);
 
-const classFor = (node: DesignNode, ctx: MapNodeContext, declarations: string | undefined): string | undefined => {
-  if (!declarations) return undefined;
-  const cls = nodeClassFor(node.id);
-  addRule(ctx.stylesheet, cls, declarations);
-  return cls;
+// D127 (Phase A/B): "link" is the dedup kind for every generated class this
+// file produces (the outer <a>, the label <span>, the icon <img>) — one
+// kind covers the whole link-rendering path, same "same nature" grouping
+// formMapping.ts's boxClass uses for "form". `positionDeclarations`
+// (Phase B) is optional here since the label <span> has no layout
+// declarations of its own to split a position out of (see its call site
+// below) — when supplied, it always gets its own never-deduped rule
+// alongside the (possibly shared) look rule.
+const classFor = (
+  node: DesignNode,
+  ctx: MapNodeContext,
+  declarations: string | undefined,
+  positionDeclarations?: string,
+): string | undefined => {
+  const nodeClass = nodeClassFor(node.id);
+  const lookClass = declarations ? addRule(ctx.stylesheet, "link", nodeClass, declarations) : undefined;
+  const positionClass = positionDeclarations ? addPositionRule(ctx.stylesheet, `${nodeClass}-pos`, positionDeclarations) : undefined;
+  return [lookClass, positionClass].filter(Boolean).join(" ") || undefined;
 };
 
 // Same two-mode asset URL resolution as mapNode.ts's resolveAssetSrc,
@@ -103,11 +116,16 @@ export const renderLink = (detected: DetectedLink, ctx: MapNodeContext): Generat
   // comment already documents for the general TEXT-node case; Link's
   // bare-TEXT path had never been updated to match when D73 added it.
   const outerDeclarations = joinStyles(
-    layoutToDeclarations(detected.linkNode.layout, detected.linkNode.paintOrder),
+    layoutToDeclarations(detected.linkNode.layout),
     nodeStyleToDeclarations(detected.linkNode.style, isBareText),
     isBareText ? fontDeclarations(detected.label) : undefined,
   );
-  const outerClass = classFor(detected.linkNode, ctx, outerDeclarations);
+  const outerClass = classFor(
+    detected.linkNode,
+    ctx,
+    outerDeclarations,
+    layoutPositionToDeclarations(detected.linkNode.layout, detected.linkNode.paintOrder),
+  );
 
   const iconHtml = (() => {
     if (!detected.icon) return "";
@@ -117,9 +135,10 @@ export const renderLink = (detected: DetectedLink, ctx: MapNodeContext): Generat
       detected.icon,
       ctx,
       joinStyles(
-        layoutToDeclarations(detected.icon.layout, detected.icon.paintOrder),
+        layoutToDeclarations(detected.icon.layout),
         detected.icon.style.opacity !== undefined ? `opacity: ${detected.icon.style.opacity}` : undefined,
       ),
+      layoutPositionToDeclarations(detected.icon.layout, detected.icon.paintOrder),
     );
     return `<img src="${resolveAssetSrc(asset, ctx)}" alt=""${attr("class", iconClass)}/>`;
   })();

@@ -92,7 +92,7 @@ const counterAxisAlignToCss = (align: DesignBundleLayout["counterAxisAlign"]): s
  *   sides (this, and the template-part inclusion's own rule — see
  *   `templatePartInclusion` in `templateParts.ts`) closes that gap.
  */
-export const layoutToDeclarations = (layout: DesignBundleLayout, paintOrder?: number): string => {
+export const layoutToDeclarations = (layout: DesignBundleLayout): string => {
   const declarations: Array<[string, string | undefined]> = [];
 
   // D54: Figma's Auto Layout has no margin concept at all — every bit of
@@ -142,40 +142,65 @@ export const layoutToDeclarations = (layout: DesignBundleLayout, paintOrder?: nu
     declarations.push(["padding", `${top}px ${right}px ${bottom}px ${left}px`]);
   }
 
-  if (layout.position) {
-    // D60: found via the footer Template Part rendering as a "staircase"
-    // of increasingly offset elements in the WordPress block editor
-    // (both the Page/Post editor and the Site Editor's template view) —
-    // confirmed correct on the front end, broken only in-editor. Root
-    // cause, confirmed directly via Sean's dev-tools computed-style
-    // inspection: `add_theme_support('editor-styles')`/`add_editor_style`
-    // (D39) wraps every rule this project generates in
-    // `:where(.editor-styles-wrapper) ...` when loading it into the
-    // editor — `:where()` always has zero specificity by CSS spec,
-    // regardless of what's nested inside it, so our selector's real
-    // specificity there is just the bare `.wpfg-{id}` class. Gutenberg's
-    // own editor-canvas CSS unconditionally sets `position: relative` on
-    // every block via a higher-specificity compound selector
-    // (`.block-editor-block-list__layout .block-editor-block-list__block`,
-    // two chained classes) — it wins the cascade and silently downgrades
-    // every absolutely-positioned element back to `relative`, which then
-    // reinterprets our `left`/`top` (meant as absolute coordinates) as
-    // relative offsets stacked on top of normal flow — explains the
-    // staircase exactly. Every other declaration this function generates
-    // was confirmed still winning correctly in the editor (checked
-    // directly in Sean's dev tools) — only `position` needed defending,
-    // so `!important` is applied surgically to just this one declaration
-    // rather than the whole rule.
-    declarations.push(["position", "absolute !important"]);
-    declarations.push(["left", `${layout.position.x}px`]);
-    declarations.push(["top", `${layout.position.y}px`]);
-    if (paintOrder !== undefined) declarations.push(["z-index", String(paintOrder)]);
-  }
-
   const width = sizeToCss(layout.sizing.width, "width");
   const height = sizeToCss(layout.sizing.height, "height");
 
   return joinStyles(buildInlineStyle(declarations), width, height);
+};
+
+/**
+ * Phase B (D127, CSS optimization): a node's absolute-position
+ * declarations (`left`/`top`/`z-index`), split out of
+ * `layoutToDeclarations` so they can go into their own, never-deduped
+ * rule (`addPositionRule`, `core/style/stylesheet.ts`) instead of being
+ * folded into the same declaration string as everything else describing
+ * a node's appearance. Two nodes with the exact same "look" (flex/gap/
+ * padding/color/border/etc.) very often sit at *different* canvas
+ * coordinates — before this split, that alone was enough to make their
+ * generated rules look unique even though the actual visual styling was
+ * identical, defeating Phase A's dedup for exactly the cases where it
+ * would matter most (a repeated card, a repeated icon+label row).
+ * Position itself is still inherently per-node (two nodes are
+ * essentially never at the same coordinates) and is never expected to be
+ * shared — see `addPositionRule`'s own doc comment.
+ *
+ * Returns an empty string when `layout.position` is unset (the node
+ * isn't absolutely positioned), matching every other declarations-builder
+ * in this file.
+ */
+export const layoutPositionToDeclarations = (layout: DesignBundleLayout, paintOrder?: number): string => {
+  if (!layout.position) return "";
+
+  const declarations: Array<[string, string | undefined]> = [];
+  // D60: found via the footer Template Part rendering as a "staircase"
+  // of increasingly offset elements in the WordPress block editor
+  // (both the Page/Post editor and the Site Editor's template view) —
+  // confirmed correct on the front end, broken only in-editor. Root
+  // cause, confirmed directly via Sean's dev-tools computed-style
+  // inspection: `add_theme_support('editor-styles')`/`add_editor_style`
+  // (D39) wraps every rule this project generates in
+  // `:where(.editor-styles-wrapper) ...` when loading it into the
+  // editor — `:where()` always has zero specificity by CSS spec,
+  // regardless of what's nested inside it, so our selector's real
+  // specificity there is just the bare `.wpfg-{id}` class. Gutenberg's
+  // own editor-canvas CSS unconditionally sets `position: relative` on
+  // every block via a higher-specificity compound selector
+  // (`.block-editor-block-list__layout .block-editor-block-list__block`,
+  // two chained classes) — it wins the cascade and silently downgrades
+  // every absolutely-positioned element back to `relative`, which then
+  // reinterprets our `left`/`top` (meant as absolute coordinates) as
+  // relative offsets stacked on top of normal flow — explains the
+  // staircase exactly. Every other declaration this function generates
+  // was confirmed still winning correctly in the editor (checked
+  // directly in Sean's dev tools) — only `position` needed defending,
+  // so `!important` is applied surgically to just this one declaration
+  // rather than the whole rule.
+  declarations.push(["position", "absolute !important"]);
+  declarations.push(["left", `${layout.position.x}px`]);
+  declarations.push(["top", `${layout.position.y}px`]);
+  if (paintOrder !== undefined) declarations.push(["z-index", String(paintOrder)]);
+
+  return buildInlineStyle(declarations);
 };
 
 /**
